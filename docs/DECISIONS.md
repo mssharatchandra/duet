@@ -35,7 +35,7 @@ Running project spend is tracked at the bottom. This file is a deliverable, not 
 | Moshi (Kyutai) | candidate duplex core | Apache-2.0 (code); weights CC-BY-4.0 | See 0003 |
 | CSM-1B (Sesame) | candidate duplex core | Apache-2.0 | See 0003 |
 
-**⚠️ Deviation flag — MinIO:** `minio/minio` is **archived on GitHub**. MinIO effectively ended its open-source community edition in 2025 (features stripped, then the repo frozen). Adopting an archived dependency in a project pitched on "no vendor lock-in" would be self-defeating. **Proposal:** for v1 demo scale, store recordings on a plain Docker volume with paths + retention tracked in Postgres; if/when S3-compatible storage is genuinely needed (Phase 4), use **SeaweedFS (Apache-2.0)** or **Garage (AGPL-3.0)** instead. Flagged here per the brief before switching. *(Also noted: Coqui TTS the company shut down in 2024; its code lives on as a community fork under MPL-2.0, but Piper/Kokoro are the healthier baseline choices.)*
+**⚠️ Deviation flag — MinIO:** `minio/minio` is **archived on GitHub**. MinIO effectively ended its open-source community edition in 2025 (features stripped, then the repo frozen). Adopting an archived dependency in a project pitched on "no vendor lock-in" would be self-defeating. **Proposal:** for v1 demo scale, store recordings on a plain Docker volume with paths + retention tracked in Postgres; if/when S3-compatible storage is genuinely needed (Phase 4), use **SeaweedFS (Apache-2.0)** or **Garage (AGPL-3.0)** instead. Flagged here per the brief before switching. **Update 2026-07-05: ✅ ACCEPTED by user** — Docker volume for v1, SeaweedFS if S3-compatible storage is genuinely needed in Phase 4. *(Also noted: Coqui TTS the company shut down in 2024; its code lives on as a community fork under MPL-2.0, but Piper/Kokoro are the healthier baseline choices.)*
 
 **Alternatives considered:** paid SaaS at each layer (Datadog, LiveKit Cloud, S3, Mailchimp) — rejected per cost guardrails and because self-hostability *is the pitch*.
 
@@ -64,7 +64,44 @@ This is the load-bearing decision of the whole project, and the brief's default 
 
 **Also evaluated:** Kyutai's *Unmute* (2025) — a cascaded-but-smart stack (streaming STT + semantic VAD + streaming TTS) that fakes duplex well. Rejected as the core (it's still a cascade) but it's a strong candidate for making our Phase 3 *baseline* state-of-the-art-fair rather than a strawman.
 
-**Status: PROPOSED — do not build Phase 1 until the user confirms.** Cost impact: none (both run locally on the Mac).
+**Status: ✅ ACCEPTED by user, 2026-07-05.** Moshi is the duplex core. Cost impact: none (runs locally on the Mac).
+
+---
+
+## 0004 — 2026-07-05 — Phase 1 built: implementation choices + measured results
+
+**Toolchain:** system Python was 3.9 (too old for MLX stack) → adopted **uv** with a managed
+Python 3.12 and a per-package venv in `/agent`. Free, reproducible, and `uv run duet-local`
+gives the brief's "one command" demo.
+
+**Hardware (actual, verified):** Apple **M5, 24 GB** unified memory — better than the brief's
+assumed 16 GB Air. 4-bit weights chosen as default anyway so the project stays runnable on
+16 GB machines; `-q 8` / `--bf16` exist for quality experiments.
+
+**Vendored an annotated loop instead of shelling out to `python -m moshi_mlx.local`:**
+`agent/duet_agent/local_loop.py` is adapted from upstream (Kyutai, Apache-2.0, attributed in
+the header) with three changes: heavy teaching annotation (it *is* Lesson 1), latency/memory
+instrumentation printed on exit, and a `--headless N` benchmark mode that reuses the exact
+live-mode `step_once()` — which later seeds the Phase 3 harness. Alternatives: use upstream
+as a black box (fails the teaching goal), or write from scratch (risk without benefit).
+
+**Measured results (M5, q4, 300-frame headless run, 2026-07-05):**
+
+| Metric | Value | Meaning |
+|---|---|---|
+| Model load + warmup | 1.5-2.3 s | cold start to conversational |
+| Steady-state step p50 / p95 / max | **48.5 / 51.0 / 81.1 ms** | vs the 80 ms/frame real-time budget → **+29 ms headroom at p95** |
+| First-steps max | ~540 ms | one-off Metal kernel compilation; absorbed by warmup frames in live mode |
+| Peak RSS / Metal memory | **4.6 / 5.2 GB** | brief asked to verify the ~8 GB estimate — actual is lower; fits 16 GB Macs comfortably |
+| Emergent behavior check | fed 24 s of silence → model said "Hey what's up?" | turn-taking initiative with zero orchestration code |
+
+**Known limitation (accepted for Phase 1):** the raw `sounddevice` path has **no acoustic echo
+cancellation** — on open speakers Moshi hears its own voice and can react to itself. Mitigation
+now: headphones. Real fix arrives naturally in Phase 4: browser WebRTC (LiveKit) does AEC on
+the client side for free. Not building AEC ourselves — that would be reinventing what the
+transport layer already provides.
+
+**Spend:** still $0.00 (≈5 GB of bandwidth).
 
 ---
 
@@ -73,5 +110,6 @@ This is the load-bearing decision of the whole project, and the brief's default 
 | Date | Item | Cost | Total |
 |---|---|---|---|
 | 2026-07-05 | Phase 0 (scaffold, GitHub, license checks) | $0.00 | **$0.00** |
+| 2026-07-05 | Phase 1 (uv, moshi_mlx, 4.9 GB weights — all local/free) | $0.00 | **$0.00** |
 
 Ask-before-spend threshold: **$20** per the brief's cost guardrails.
