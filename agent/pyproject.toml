@@ -13,6 +13,20 @@ dependencies = [
 
 [project.scripts]
 duet-local = "duet_agent.local_loop:main"
+duet-sdr = "duet_agent.sdr_loop:main"
+
+[project.optional-dependencies]
+live = ["faster-whisper>=1.0"]  # ASR for the async brain in --live mode only
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.8"]
+
+[tool.ruff]
+line-length = 130
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [build-system]
 requires = ["hatchling"]

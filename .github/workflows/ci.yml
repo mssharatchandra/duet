@@ -1,0 +1,77 @@
+# Duet CI — every commit gets: lint, unit tests (2 OSes), import smoke on
+# Apple-Silicon, and the live reasoning-layer golden eval (≥90% gate).
+#
+# What CI deliberately does NOT do: run the 4.9 GB Moshi weights. That check
+# (`duet-sdr` scripted mode, VERDICT: PASS) is the pre-push gate run locally,
+# because pulling 5 GB per commit would be slow, flaky, and wasteful. See
+# docs/DECISIONS.md 0006.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uvx ruff check agent
+
+  unit:
+    strategy:
+      matrix:
+        include:
+          # Ubuntu proves the brain-side modules (persona/reasoning/injector)
+          # are genuinely dependency-free: stdlib + pytest only, no MLX.
+          - os: ubuntu-latest
+            full-install: false
+          # macOS (Apple Silicon) installs the real MLX stack and additionally
+          # smoke-imports the audio-loop modules.
+          - os: macos-latest
+            full-install: true
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Create venv
+        working-directory: agent
+        run: uv venv --python 3.12
+      - name: Install (pure)
+        if: ${{ !matrix.full-install }}
+        working-directory: agent
+        run: uv pip install pytest
+      - name: Install (full MLX stack)
+        if: ${{ matrix.full-install }}
+        working-directory: agent
+        run: uv pip install -e . --group dev
+      - name: Unit tests
+        working-directory: agent
+        run: PYTHONPATH=. .venv/bin/pytest -q
+      - name: Import smoke (audio loop modules)
+        if: ${{ matrix.full-install }}
+        working-directory: agent
+        run: .venv/bin/python -c "import duet_agent.local_loop, duet_agent.sdr_loop; print('imports OK')"
+
+  reasoning-eval:
+    # Live golden eval against Gemini (12 scenarios, ~$0.001/run at list price,
+    # free tier in practice). Push-only: fork PRs have no secret access.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    needs: [lint, unit]
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Golden eval (gate ≥90%)
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "::error::GEMINI_API_KEY secret not configured"; exit 1
+          fi
+          python eval/reasoning/run_eval.py

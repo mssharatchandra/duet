@@ -130,7 +130,68 @@ constraint everything else in this project serves.
 - [ ] I know which number on the exit report proves the loop runs in real time
 
 
-## Lesson 2 (Phase 2) — Hybrid intelligence: fast mouth, slow brain *(unlocks after Phase 2)*
+## Lesson 2 (Phase 2) — Hybrid intelligence: fast mouth, slow brain
+
+Full-duplex models are conversationally brilliant and factually useless: Moshi holds a natural
+conversation but can't reliably quote your pricing page. Cascades are the opposite. The hybrid
+pattern (Kyutai's own `moshi-rag` popularized it) splits the job by *latency class*:
+
+| | owns | latency budget |
+|---|---|---|
+| **Fast mouth** (Moshi) | timing, backchannels, interruptions, filler, tone | 80 ms, hard |
+| **Slow brain** (Gemini Flash via `reasoning.py`) | facts, objection handling, qualification | ~1 s, soft, async |
+
+### The injection trick — read `injector.py` and `_make_hook` in `sdr_loop.py`
+
+`LmGen` exposes `on_text_hook`: it hands you the text token Moshi *just sampled* for this frame,
+**before** the audio for the frame is generated from it. Overwrite the token and the depformer
+renders your word in Moshi's voice with natural prosody. Queue a whole tokenized sentence and feed
+one token per frame → the brain literally speaks through the mouth. This is the same mechanism
+Kyutai's own TTS uses for script-forcing, repurposed for live guidance.
+
+### The three rules that make it feel human (the brief's "crux")
+
+1. **Slow guidance never stalls the call.** The audio loop polls `brain.poll()` once per frame,
+   non-blocking. Until guidance lands, Moshi free-runs — it acknowledges, hums, keeps the floor.
+   A 1.3 s brain round-trip is *completely masked*; the lead just hears a person taking a beat.
+2. **The user always wins.** Barge-in mid-injection *drops* the rest of the script (rule 2 in
+   `injector.py`). Resuming a canned pitch after an interruption is peak robot; Duet never does.
+3. **Guidance expires.** A talking point that waited >8 s for a polite slot is discarded — the
+   conversation has moved on.
+
+And the failure mode: if Gemini times out or 500s, a `ReasoningFailure` lands on the queue, gets
+logged, and *nothing else happens* — Moshi keeps chatting unaided. Degradation is "less substantive,"
+never "dead air." Watch it happen: `test_failure_path_is_graceful` in `tests/test_reasoning.py`.
+
+### Where ASR belongs in a full-duplex world
+
+The brain needs the lead's *words* (Moshi's text stream only carries Moshi's own speech), so
+`--live` mode runs faster-whisper on the user's audio. Crucial architectural point: **ASR feeds the
+brain, not the mouth**. In a cascade, ASR sits in the critical path — its latency is your response
+latency. Here it can take two whole seconds and the conversation doesn't hiccup, because responding
+was never its job.
+
+### Separation of trust: why scoring is not the LLM's job
+
+`persona.py` splits the persona into (a) a fact sheet the LLM must ground in, (b) prompts, and
+(c) a **deterministic** BANT scoring rubric. The LLM reports evidence strength ("budget: weak");
+Python computes the score. LLMs are good at reading signals and bad at consistent arithmetic —
+put judgment in the model and math in code, and the eval can then test each separately.
+
+### What the eval actually gates (run: `python eval/reasoning/run_eval.py`)
+
+Structured checks per scenario — intent, objection class, *grounding* (must cite real facts), two
+**hallucination canaries** (asks about payroll/hardware, which Brewline doesn't do — the model must
+decline, not invent), brevity, signal tracking. Gate ≥90%; first real run 92.7%, and the three
+failures are visible in CI logs instead of the checks being widened until green. An eval you can't
+fail is marketing, not engineering.
+
+- [ ] I can explain why brain latency is invisible to the lead (and when it wouldn't be)
+- [ ] I can trace a talking point: Gemini JSON → `inject()` → pad-boundary → forced tokens → speech
+- [ ] I can explain why barge-in *drops* rather than *pauses* the script
+- [ ] I can explain why ASR here doesn't recreate a cascade
+
+
 ## Lesson 3 (Phase 3) — Measuring conversation: latency, Takeover Rate, blind evals *(unlocks after Phase 3)*
 ## Lesson 4 (Phase 4) — Real-time audio in production: WebRTC, SFUs, and cost control *(unlocks after Phase 4)*
 ## Lesson 5 (Phase 5) — Shipping and positioning an OSS infra project *(unlocks after Phase 5)*

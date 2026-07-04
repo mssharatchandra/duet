@@ -105,11 +105,72 @@ transport layer already provides.
 
 ---
 
+## 0005 — 2026-07-05 — Reasoning model: discovery, measurement, choice
+
+**Key handling:** user-provided Gemini key lives in local `.env` (gitignored, chmod 600) and as a
+GitHub Actions secret for the eval gate. ⚠️ The key was shared via screenshot and AI Studio shows
+an older key on the account flagged as publicly exposed — recommended rotating that older key;
+treat this one as dev-tier and rotate before any public launch.
+
+**Don't trust stale model names:** queried the live API instead of hardcoding. Current stable
+flash family includes `gemini-3.5-flash` and `gemini-3.1-flash-lite` (the "2.5" generation the
+original brief era assumed is two generations old).
+
+**Measured round-trip on a representative SDR objection prompt (2026-07-05):**
+
+| Model / config | Latency |
+|---|---|
+| gemini-3.5-flash (default = thinking on) | 5,069 ms — unusable for voice |
+| gemini-3.5-flash, thinkingBudget 0 | 1,748 ms |
+| **gemini-3.1-flash-lite (chosen default)** | **~1,000-1,300 ms** |
+
+**Decision:** default `gemini-3.1-flash-lite`, overridable via `REASONING_MODEL` env var; thinking
+disabled automatically for non-lite models. Rationale: in the async-augmentation pattern the brain's
+latency is masked by Moshi's natural backfill, but shorter masking = less filler; quality is gated
+by the eval (0006), which lite passes. Cost estimates in `reasoning.py` `PRICE_PER_M` are marked
+as estimates — re-verify before publishing Phase 3 cost benchmarks; dev usage rides the free tier.
+
+---
+
+## 0006 — 2026-07-05 — Phase 2 architecture: text-stream injection + CI/eval design
+
+**Injection mechanism:** `LmGen(on_text_hook=…)` — the hook receives each frame's sampled text
+token *after* text sampling, *before* the depformer generates that frame's audio conditioned on it.
+Overwriting the token (in-place `text_tokens[:] = …`) makes Moshi speak the forced word in its own
+voice. This is Kyutai's own first-party forcing mechanism (their TTS engine, `models/tts.py:607`,
+does exactly this), so we're on supported ground, not a hack. Alternatives considered: prompt-level
+conditioning (no runtime control), audio-token splicing (breaks prosody, fights the depformer).
+
+**The crux (async slowness / interruptions), as three injector rules:** (1) injection waits for a
+pad-token word boundary AND ~0.5 s of user quiet — slow guidance sounds like a person taking a
+beat, because Moshi free-runs meanwhile; (2) user barge-in during forcing **drops** the rest of the
+script (never resumes a stale pitch); (3) guidance older than 8 s is discarded unspoken. The user's
+audio path never gates on any of this — that would rebuild a cascade.
+
+**ASR position:** faster-whisper (optional dep, `--live` mode only) transcribes the *lead* for the
+brain. It feeds the brain, not the mouth: the 80 ms loop never waits on it.
+
+**End-to-end verification (scripted mode, real Moshi + real Gemini, 2026-07-05):** 4/4 talking
+points injected into Moshi's speech; brain latency avg 1,281 ms fully masked; objections classified
+correctly (`status_quo`, `price`); lead scored 100/100 by the deterministic BANT rubric; call cost
+$0.00035 at list price. User waived the live-mic checkpoint (couldn't run it); scripted mode is the
+stand-in until the Phase 4 web demo exists.
+
+**CI (every push/PR):** ruff lint · unit tests on ubuntu (proves brain modules are stdlib-pure) and
+macos Apple-Silicon (full MLX stack + import smoke) · live reasoning golden eval on push with a
+**≥90% gate** (12 scenarios × ~3.4 checks: intent, objection classification, fact grounding, two
+anti-hallucination canaries, brevity, BANT signals). First run: **92.7%**, failures logged and left
+honest rather than widening the checks. Deliberately NOT in CI: the 4.9 GB Moshi weights — the
+scripted e2e (`duet-sdr`, VERDICT: PASS) is the local pre-push gate instead; pulling 5 GB per
+commit is slow, flaky, and wasteful. Revisit with a weight cache if it ever bites us.
+---
+
 ## Running spend
 
 | Date | Item | Cost | Total |
 |---|---|---|---|
 | 2026-07-05 | Phase 0 (scaffold, GitHub, license checks) | $0.00 | **$0.00** |
 | 2026-07-05 | Phase 1 (uv, moshi_mlx, 4.9 GB weights — all local/free) | $0.00 | **$0.00** |
+| 2026-07-05 | Phase 2 (Gemini dev calls ≈ $0.004 list-price equivalent, free tier) | $0.00 | **$0.00** |
 
 Ask-before-spend threshold: **$20** per the brief's cost guardrails.

@@ -76,8 +76,12 @@ def _report_steps(step_ms: list[float]) -> None:
         )
 
 
-def load_model(args) -> tuple[models.LmGen, "sentencepiece.SentencePieceProcessor", float]:
-    """Load the Moshi language model (the 'brain+mouth'), quantized, onto the GPU."""
+def load_model(args, on_text_hook=None) -> tuple[models.LmGen, "sentencepiece.SentencePieceProcessor", float]:
+    """Load the Moshi language model (the 'brain+mouth'), quantized, onto the GPU.
+
+    on_text_hook is the Phase 2 injection point: called with each frame's
+    sampled text token (mutable, shape (1,1)) before audio is generated from it.
+    """
     weight_names = {4: "model.q4.safetensors", 8: "model.q8.safetensors", None: "model.safetensors"}
     model_file = huggingface_hub.hf_hub_download(args.hf_repo, weight_names[args.quantized])
     tokenizer_file = huggingface_hub.hf_hub_download(args.hf_repo, "tokenizer_spm_32k_3.model")
@@ -100,6 +104,7 @@ def load_model(args) -> tuple[models.LmGen, "sentencepiece.SentencePieceProcesso
         text_sampler=utils.Sampler(),
         audio_sampler=utils.Sampler(),
         check=False,
+        on_text_hook=on_text_hook,
     )
     return gen, text_tokenizer, load_s
 

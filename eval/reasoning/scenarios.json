@@ -1,0 +1,89 @@
+[
+  {
+    "id": "greeting-intro",
+    "history": [],
+    "user": "Hello? Who's this?",
+    "intent_in": ["greeting", "smalltalk", "other", "question"],
+    "mention_groups": [["brewline"]]
+  },
+  {
+    "id": "discovery-owner",
+    "history": [["agent", "Hi, this is the Brewline assistant — thanks for requesting info!"]],
+    "user": "I'm the owner, we run three coffee shops in Austin.",
+    "intent_in": ["discovery_answer", "question"],
+    "mention_groups": [["inventory", "order", "track", "how", "process", "manage"]]
+  },
+  {
+    "id": "objection-spreadsheets",
+    "history": [["agent", "How do you handle inventory and ordering today?"]],
+    "user": "Honestly we already use spreadsheets and it works fine.",
+    "intent_in": ["objection"],
+    "objection_in": ["status_quo"],
+    "mention_groups": [["cogs", "waste", "save", "hour", "8", "automat", "cost", "time"]]
+  },
+  {
+    "id": "question-price",
+    "history": [["agent", "Brewline automates reordering from your sales data."]],
+    "user": "And what does it cost?",
+    "intent_in": ["question", "discovery_answer", "other"],
+    "mention_groups": [["99", "249", "ninety", "two hundred", "forty-nine"]]
+  },
+  {
+    "id": "objection-price",
+    "history": [["agent", "The Starter plan is $99 a month for one location."]],
+    "user": "Yeah that's too expensive for us right now.",
+    "intent_in": ["objection"],
+    "objection_in": ["price"],
+    "mention_groups": [["trial", "save", "waste", "99", "pays", "free"]]
+  },
+  {
+    "id": "objection-no-time",
+    "history": [["agent", "Would you like to try the free trial?"]],
+    "user": "We really don't have time to set up new software right now.",
+    "intent_in": ["objection"],
+    "objection_in": ["no_time"],
+    "mention_groups": [["afternoon", "setup", "set up", "pos", "connect", "sales history", "quick", "automatic"]]
+  },
+  {
+    "id": "canary-payroll",
+    "history": [],
+    "user": "Can it also run payroll for my baristas?",
+    "intent_in": ["question", "objection", "other", "discovery_answer"],
+    "mention_groups": [["payroll"], ["not", "n't", "doesn", "isn", "unfortunately", "only", "focus"]]
+  },
+  {
+    "id": "canary-hardware",
+    "history": [],
+    "user": "Do you also sell the POS hardware itself?",
+    "intent_in": ["question", "objection", "other", "discovery_answer"],
+    "mention_groups": [["hardware"], ["not", "n't", "doesn", "isn", "unfortunately", "only", "focus", "integrat"]]
+  },
+  {
+    "id": "integration-square",
+    "history": [["agent", "What POS are you running today?"]],
+    "user": "We're on Square right now.",
+    "intent_in": ["discovery_answer", "question", "other"],
+    "mention_groups": [["square"]]
+  },
+  {
+    "id": "signal-weak-timeline",
+    "history": [["agent", "When would you want to be up and running?"]],
+    "user": "Maybe sometime next year? No rush at all honestly.",
+    "intent_in": ["discovery_answer", "objection", "other", "smalltalk"],
+    "timeline_in": ["weak", "none"]
+  },
+  {
+    "id": "signal-weak-authority",
+    "history": [["agent", "Shall we get you started on the trial?"]],
+    "user": "I'd need to check with the franchise owner first, it's not my call.",
+    "intent_in": ["discovery_answer", "objection", "other"],
+    "authority_in": ["weak", "none"]
+  },
+  {
+    "id": "closing-demo",
+    "history": [["agent", "Since you want this before the fall rush, shall we book a demo?"]],
+    "user": "Great, let's book that demo for Thursday.",
+    "intent_in": ["closing"],
+    "mention_groups": [["thursday", "demo", "book", "calendar", "great", "perfect", "confirm"]]
+  }
+]
