@@ -1,0 +1,39 @@
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+dist/
+
+# Model weights & audio artifacts (large binaries stay out of git)
+models/
+*.safetensors
+*.gguf
+*.bin
+*.pt
+recordings/
+*.wav
+*.mp3
+!eval/fixtures/**/*.wav
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local data volumes
+infra/data/
