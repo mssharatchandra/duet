@@ -123,12 +123,12 @@ class CallStore:
             cols = [c for c in cols if c in record]
             with psycopg.connect(self.dsn, connect_timeout=3) as conn:
                 conn.execute(CALLS_SCHEMA)
-                conn.execute(
+                cur = conn.execute(
                     f"INSERT INTO calls ({', '.join(cols)}) VALUES ({', '.join('%s' for _ in cols)})"
                     " ON CONFLICT (call_id) DO NOTHING",
                     [record[c] for c in cols],
                 )
-            return True
+                return cur.rowcount > 0  # False = duplicate call_id, skipped
         except Exception as e:
             if not self._warned:
                 self._warned = True
