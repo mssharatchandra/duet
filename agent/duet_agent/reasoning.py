@@ -106,6 +106,9 @@ class ReasoningLayer:
         self.timeout_s = timeout_s
         self.results: queue.Queue = queue.Queue()
         self.stats = UsageStats()
+        # Optional Langfuse tracing (Phase 3): set both to trace every call.
+        self.tracer = None
+        self.trace_id: str | None = None
 
     # -- the non-blocking API the conversation loop uses --------------------
 
@@ -124,6 +127,7 @@ class ReasoningLayer:
 
     def _call(self, history, user_utterance) -> None:
         t0 = time.perf_counter()
+        t_wall = time.time()
         self.stats.calls += 1
         try:
             response = self._post(persona.build_prompt(history, user_utterance))
@@ -132,10 +136,18 @@ class ReasoningLayer:
             self.stats.tokens_in += guidance.tokens_in
             self.stats.tokens_out += guidance.tokens_out
             self.stats.latencies_ms.append(guidance.latency_ms)
+            if self.tracer and self.trace_id:
+                self.tracer.generation(self.trace_id, "reasoning", self.model, user_utterance,
+                                       guidance.talking_point, guidance.tokens_in, guidance.tokens_out,
+                                       t_wall - guidance.latency_ms / 1e3, t_wall)
             self.results.put(guidance)
         except Exception as e:  # any failure degrades gracefully, never propagates
             self.stats.failures += 1
-            self.results.put(ReasoningFailure(reason=f"{type(e).__name__}: {e}", latency_ms=(time.perf_counter() - t0) * 1e3))
+            failure = ReasoningFailure(reason=f"{type(e).__name__}: {e}", latency_ms=(time.perf_counter() - t0) * 1e3)
+            if self.tracer and self.trace_id:
+                self.tracer.generation(self.trace_id, "reasoning", self.model, user_utterance,
+                                       failure.reason, 0, 0, t_wall - failure.latency_ms / 1e3, t_wall, error=True)
+            self.results.put(failure)
 
     def _post(self, prompt: str) -> dict:
         generation_config: dict = {"maxOutputTokens": 500, "responseMimeType": "application/json"}

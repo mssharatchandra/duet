@@ -17,6 +17,7 @@ duet-sdr = "duet_agent.sdr_loop:main"
 
 [project.optional-dependencies]
 live = ["faster-whisper>=1.0"]  # ASR for the async brain in --live mode only
+bench = ["faster-whisper>=1.0", "piper-tts>=1.3", "psycopg[binary]>=3.2"]  # Phase 3 harness
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.8"]

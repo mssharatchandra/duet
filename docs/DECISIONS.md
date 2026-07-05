@@ -165,6 +165,36 @@ scripted e2e (`duet-sdr`, VERDICT: PASS) is the local pre-push gate instead; pul
 commit is slow, flaky, and wasteful. Revisit with a weight cache if it ever bites us.
 ---
 
+## 0007 — 2026-07-05 — Phase 3: benchmark results, infra pivot, measurement decisions
+
+**Docker pivot:** this Mac has no Docker, no Homebrew, and no admin rights, so the observability
+stack cannot run locally this phase. Decision: author the full stack in `infra/` (pinned upstream
+`langfuse-compose.yml` + our `observability-compose.yml` with Grafana/Prometheus/Loki/duet-postgres,
+dashboards auto-provisioned, Langfuse headlessly provisioned via `LANGFUSE_INIT_*`) and **verify it
+in CI** (`.github/workflows/infra.yml`: stack up → Langfuse health + ingestion 207 → Grafana
+datasource provisioned → CallStore Postgres write). All local telemetry is fail-silent; benchmark
+truth lives in JSONL regardless. Local dashboards arrive when the user installs OrbStack/Docker
+Desktop; production dashboards arrive on the Phase 4 VPS.
+
+**Measurement decisions:** app metrics go to Postgres (not Prometheus) because benchmark processes
+are short-lived — pull-based scraping needs a long-running server, which exists in Phase 4.
+Takeover/backchannel/handoff/overlap definitions in `turntaking.py` (backchannel ≤0.6 s). Cascade
+constants: `ENDPOINT_WAIT_S=0.7`, `BARGE_KILL_S=0.4`. GPU pricing declared: `GPU_USD_PER_HOUR=0.40`
+(L4-class). Baseline TTS: piper-tts now ships arm64 wheels — no Kokoro fallback needed.
+Ops lesson: multi-minute benchmarks on a laptop must run under `caffeinate` — the first attempt
+died to system sleep (a 9,500 s "wall time" scenario and a stalled codec thread).
+
+**Results (full table + honest reading: `eval/bench/RESULTS.md`):** Duet handoff p50 **240 ms** vs
+cascade **1,880 ms** (~8×) and 0.4 backchannels/call vs 0 — but Duet takeover rate **0.24** vs 0.00,
+overlap 0.234 vs 0.053, p95 tail worse (3.2 s vs 2.2 s). Published as-is, including the note that
+the takeover metric is biased against Duet. Human Delta-4: not yet measured — clips + protocol
+ready (`docs/BLIND_EVAL.md`), needs human raters only the user can recruit.
+
+**Implication for Phase 4/5:** Duet's weak spots (eagerness, p95 tail) are tunable — audio-sampler
+temperature, injection politeness windows — and the harness now exists to measure any such change.
+That is the whole point of building the instrument first.
+---
+
 ## Running spend
 
 | Date | Item | Cost | Total |
@@ -172,5 +202,6 @@ commit is slow, flaky, and wasteful. Revisit with a weight cache if it ever bite
 | 2026-07-05 | Phase 0 (scaffold, GitHub, license checks) | $0.00 | **$0.00** |
 | 2026-07-05 | Phase 1 (uv, moshi_mlx, 4.9 GB weights — all local/free) | $0.00 | **$0.00** |
 | 2026-07-05 | Phase 2 (Gemini dev calls ≈ $0.004 list-price equivalent, free tier) | $0.00 | **$0.00** |
+| 2026-07-05 | Phase 3 (benchmark: ~80 Gemini calls ≈ $0.01 equiv, free tier; all infra OSS) | $0.00 | **$0.00** |
 
 Ask-before-spend threshold: **$20** per the brief's cost guardrails.

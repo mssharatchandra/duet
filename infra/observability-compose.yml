@@ -1,0 +1,67 @@
+# Duet observability stack (all OSS, all self-hosted). Companion to
+# langfuse-compose.yml (pinned upstream file — run both):
+#   cd infra && cp .env.example .env
+#   docker compose -f langfuse-compose.yml up -d      # Langfuse UI → :3000
+#   docker compose -f observability-compose.yml up -d # Grafana    → :3001
+#
+# duet-postgres is OUR db (calls/benchmark/leads) — separate from Langfuse's
+# internal postgres on purpose: Langfuse's schema is its own business.
+
+services:
+  duet-postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: duet
+      POSTGRES_PASSWORD: duet
+      POSTGRES_DB: duet
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - duet_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U duet"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  grafana:
+    image: grafana/grafana-oss:11.5.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: duet
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      duet-postgres:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v3.2.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+
+  # Log aggregation — staged now, fed by the long-running server in Phase 4.
+  loki:
+    image: grafana/loki:3.4.2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - loki_data:/loki
+
+volumes:
+  duet_pg:
+  grafana_data:
+  prom_data:
+  loki_data:

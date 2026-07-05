@@ -1,0 +1,53 @@
+# Verifies the self-hosted observability stack actually comes up and accepts
+# data — because local dev on this project's Mac has no Docker (no admin
+# rights; DECISIONS.md 0007). CI runners have Docker, so the stack is proven
+# here on every infra change: Langfuse healthy + ingests a trace, Grafana
+# provisions the Postgres datasource, and telemetry.CallStore writes a row.
+
+name: infra
+
+on:
+  push:
+    branches: [main]
+    paths: ["infra/**", "agent/duet_agent/telemetry.py", ".github/workflows/infra.yml"]
+  pull_request:
+    paths: ["infra/**", "agent/duet_agent/telemetry.py", ".github/workflows/infra.yml"]
+
+jobs:
+  stack-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start stacks
+        working-directory: infra
+        run: |
+          cp .env.example .env
+          docker compose -f langfuse-compose.yml up -d --quiet-pull
+          docker compose -f observability-compose.yml up -d --quiet-pull
+      - name: Langfuse healthy
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:3000/api/public/health && exit 0; sleep 5;
+          done
+          docker compose -f infra/langfuse-compose.yml logs --tail 50; exit 1
+      - name: Langfuse accepts a trace (ingestion API, dev keys)
+        run: |
+          code=$(curl -s -o /tmp/resp -w '%{http_code}' -u pk-lf-duet-dev:sk-lf-duet-dev \
+            -H 'Content-Type: application/json' \
+            -d "{\"batch\":[{\"id\":\"$(uuidgen)\",\"type\":\"trace-create\",\"timestamp\":\"$(date -u +%FT%T.000Z)\",\"body\":{\"id\":\"$(uuidgen)\",\"name\":\"ci-smoke\"}}]}" \
+            http://localhost:3000/api/public/ingestion)
+          cat /tmp/resp; [ "$code" = "207" ]
+      - name: Grafana provisioned with Duet datasources
+        run: |
+          for i in $(seq 1 30); do curl -sf http://localhost:3001/api/health && break; sleep 3; done
+          curl -sf -u admin:duet http://localhost:3001/api/datasources | grep -q '"uid":"duet-pg"'
+      - name: CallStore writes a row to duet-postgres
+        run: |
+          pip install "psycopg[binary]" -q
+          PYTHONPATH=agent DATABASE_URL=postgresql://duet:duet@localhost:5433/duet python3 -c "
+          from duet_agent.telemetry import CallStore
+          ok = CallStore().insert({'call_id': 'ci-smoke', 'mode': 'ci', 'scenario': 'smoke',
+                                   'duration_s': 1.0, 'takeover_rate': 0.0})
+          assert ok, 'insert failed'
+          print('postgres write OK')"

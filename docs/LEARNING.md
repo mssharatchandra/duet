@@ -192,6 +192,67 @@ fail is marketing, not engineering.
 - [ ] I can explain why ASR here doesn't recreate a cascade
 
 
-## Lesson 3 (Phase 3) — Measuring conversation: latency, Takeover Rate, blind evals *(unlocks after Phase 3)*
+## Lesson 3 (Phase 3) — Measuring conversation: latency, Takeover Rate, blind evals
+
+You can't claim "more natural" — you can claim numbers and let humans judge feel. Phase 3
+builds both instruments. Everything here lives in `agent/duet_agent/turntaking.py`,
+`eval/bench/run_bench.py`, and `agent/duet_agent/telemetry.py`.
+
+### The metric that matters isn't "latency" — it's four turn-taking behaviors
+
+A conversation is two boolean tracks on the 80 ms grid: *user speaking?* / *agent speaking?*.
+From just that, `turntaking.analyze()` derives (definitions stated, so they're criticizable):
+
+- **Handoff latency** — user stops → agent audibly starts. This is *perceived* response time,
+  and it's measured identically for both systems (no system gets to define its own latency).
+- **Takeover** — agent starts talking >0.6 s *inside* your utterance: the "shut up, I'm
+  pitching" failure. Takeover rate = takeovers per user utterance.
+- **Backchannel** — same onset-inside-utterance, but ≤0.6 s ("mm-hm"). The *good* overlap.
+  A metric that counted all overlap as bad would punish exactly the behavior we want.
+- **Overlap ratio** — fraction of your speaking time the agent talks over.
+
+### How each side is measured (the honesty engineering)
+
+**Duet: real.** A simulated caller (Piper TTS) speaks into Moshi's actual input stream; Moshi's
+decoded output is energy-detected on the same grid. Nothing about turn-taking is scripted —
+if Moshi barges in rudely, the number shows it. One turn per scenario deliberately barges in
+while the agent is mid-speech.
+
+**Cascade: measured components + declared constants.** Real faster-whisper latency, real Gemini
+latency (same brain!), real Piper synthesis latency — plus `ENDPOINT_WAIT_S = 0.7` (a silence
+endpointer must wait to know you finished; that's its defining property) and `BARGE_KILL_S =
+0.4` (typical production barge-in detection). The constants are named in code and in the
+results so anyone can rerun with different assumptions.
+
+**The subtle trap this design avoids:** if both systems shared one live audio room, the
+"caller" would need its own turn-taking policy, and you'd be benchmarking your simulator.
+Scripted caller turns + real component behavior keeps the comparison apples-to-apples.
+
+### Cost per minute, honestly
+
+`telemetry.cost_fields()` prices each call: GPU-seconds × a *declared* rate
+(`GPU_USD_PER_HOUR`, default $0.40 ≈ serverless L4 class — local Apple-Silicon runs cost $0,
+we price what production would) + Gemini tokens at list price. Cascade pays no GPU here
+(CPU ASR/TTS) but pays more LLM tokens per useful minute — the tradeoff shows up in $/min.
+
+### Observability: traces vs metrics vs logs (and why three tools)
+
+- **Langfuse** = per-call *traces*: every Gemini generation with input/output/tokens/latency,
+  linked by `langfuse_trace_id` in the calls table. Debugging one weird call happens here.
+- **Postgres + Grafana** = *metrics over time*: takeover rate, handoff p95, $/min per mode.
+  Spotting drift happens here.
+- **Loki** = *logs*, staged for the Phase 4 long-running server. Short-lived benchmark runs
+  don't suit Prometheus scraping (nothing alive to scrape) — that's why call metrics go to
+  Postgres, and Prometheus joins when a server exists. Tool follows process lifetime.
+
+And the blind eval ([BLIND_EVAL.md](BLIND_EVAL.md)): machines score mechanics; only blinded
+humans may score *naturalness*. The Delta-4 number gets published whatever it is.
+
+- [ ] I can define takeover vs backchannel and defend the 0.6 s line (or argue to change it)
+- [ ] I can explain why the caller is simulated but Duet's numbers are still "real"
+- [ ] I can explain why the cascade's 0.7 s endpoint wait is architectural, not an unfair handicap
+- [ ] I know which questions go to Langfuse vs Grafana vs the JSONL
+
+
 ## Lesson 4 (Phase 4) — Real-time audio in production: WebRTC, SFUs, and cost control *(unlocks after Phase 4)*
 ## Lesson 5 (Phase 5) — Shipping and positioning an OSS infra project *(unlocks after Phase 5)*

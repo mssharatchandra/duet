@@ -44,6 +44,17 @@ the lead (deterministic BANT rubric), and exits non-zero if injection fails — 
 pre-push gate for anything touching the audio loop. Reasoning-layer quality is gated separately
 by `python eval/reasoning/run_eval.py` (≥90%, also enforced in CI).
 
+## Phase 3: benchmark against the cascaded baseline
+
+```bash
+uv pip install -e '.[bench]'                      # faster-whisper + piper + psycopg
+caffeinate .venv/bin/python ../eval/bench/run_bench.py   # ~15 min, all 10 scenarios × 2 modes
+```
+
+Produces `eval/bench/out/`: per-call JSONL, mixed-audio WAV clips for blind listening
+(docs/BLIND_EVAL.md), a summary table, plus Postgres rows + Langfuse traces when the
+`infra/` stack is up. Method + numbers: `eval/bench/RESULTS.md`.
+
 ## What to read
 
 [`duet_agent/local_loop.py`](duet_agent/local_loop.py) — heavily annotated; pairs with

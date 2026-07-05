@@ -1,0 +1,42 @@
+[
+  {"id": "s01-spreadsheets", "turns": [
+    {"text": "Hi, I'm the owner of three coffee shops in Austin."},
+    {"text": "Honestly we already use spreadsheets and it works fine.", "barge": true},
+    {"text": "Okay. And what does it cost?"}]},
+  {"id": "s02-price-push", "turns": [
+    {"text": "Yeah hi, I manage a single espresso bar downtown."},
+    {"text": "That sounds way too expensive for a small shop like ours.", "barge": true},
+    {"text": "Fine, how long does the trial last?"}]},
+  {"id": "s03-no-time", "turns": [
+    {"text": "I run the roastery and the cafe, so I'm slammed."},
+    {"text": "We just don't have time to set up new software right now.", "barge": true},
+    {"text": "An afternoon? Really? What's involved exactly?"}]},
+  {"id": "s04-square", "turns": [
+    {"text": "We're on Square right now for everything."},
+    {"text": "Does it pull the sales data in automatically or is that manual?", "barge": true},
+    {"text": "Nice, okay. And when could we start?"}]},
+  {"id": "s05-payroll-canary", "turns": [
+    {"text": "Quick question, can it also run payroll for my baristas?"},
+    {"text": "Ah shame. What does it actually do then?", "barge": true},
+    {"text": "Got it, inventory only. That's still useful."}]},
+  {"id": "s06-waste", "turns": [
+    {"text": "Our biggest problem is honestly milk waste, we pour so much away."},
+    {"text": "How would software even help with that?", "barge": true},
+    {"text": "Interesting. What would that cost for two locations?"}]},
+  {"id": "s07-authority", "turns": [
+    {"text": "I'm the shift manager, the owner isn't in today."},
+    {"text": "I can't really sign off on anything myself, it's not my call.", "barge": true},
+    {"text": "Sure, send the details and I'll pass them along."}]},
+  {"id": "s08-timeline", "turns": [
+    {"text": "We're opening a second location in September."},
+    {"text": "So we'd want everything running before the fall rush.", "barge": true},
+    {"text": "Great, let's book that demo for Thursday then."}]},
+  {"id": "s09-competitor", "turns": [
+    {"text": "We looked at MarketMan last year and hated the setup."},
+    {"text": "What makes yours any different from those big systems?", "barge": true},
+    {"text": "Hm. Fourteen days free, you said?"}]},
+  {"id": "s10-cost-detail", "turns": [
+    {"text": "Give me the pricing straight, no fluff please."},
+    {"text": "Is that per location or total for all five of my shops?", "barge": true},
+    {"text": "Alright, that's actually reasonable for five."}]}
+]
