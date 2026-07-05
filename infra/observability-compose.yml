@@ -13,7 +13,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: duet
-      POSTGRES_PASSWORD: duet
+      POSTGRES_PASSWORD: ${DUET_PG_PASSWORD:-duet}
       POSTGRES_DB: duet
     ports:
       - "127.0.0.1:5433:5432"
@@ -32,7 +32,8 @@ services:
       - "127.0.0.1:3001:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: duet
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-duet}
+      DUET_PG_PASSWORD: ${DUET_PG_PASSWORD:-duet}
       GF_ANALYTICS_REPORTING_ENABLED: "false"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

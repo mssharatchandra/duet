@@ -10,7 +10,7 @@ datasources:
       sslmode: disable
       postgresVersion: 1700
     secureJsonData:
-      password: duet
+      password: $DUET_PG_PASSWORD
   - name: Prometheus
     uid: duet-prom
     type: prometheus
