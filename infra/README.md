@@ -10,8 +10,8 @@ is verified in CI instead, see `.github/workflows/infra.yml`).
 
 ```bash
 cd infra && cp .env.example .env
-docker compose -f langfuse-compose.yml up -d        # Langfuse UI  → http://localhost:3000
-docker compose -f observability-compose.yml up -d   # Grafana      → http://localhost:3001
+docker compose -p langfuse -f langfuse-compose.yml up -d       # Langfuse UI → http://localhost:3000
+docker compose -p duet-obs -f observability-compose.yml up -d  # Grafana     → http://localhost:3001 · Prometheus → :9091
 ```
 
 Logins (dev defaults, rotate for any shared deploy): Langfuse `dev@duet.local` /

@@ -23,14 +23,14 @@ jobs:
         working-directory: infra
         run: |
           cp .env.example .env
-          docker compose -f langfuse-compose.yml up -d --quiet-pull
-          docker compose -f observability-compose.yml up -d --quiet-pull
+          docker compose -p langfuse -f langfuse-compose.yml up -d --quiet-pull
+          docker compose -p duet-obs -f observability-compose.yml up -d --quiet-pull
       - name: Langfuse healthy
         run: |
           for i in $(seq 1 60); do
             curl -sf http://localhost:3000/api/public/health && exit 0; sleep 5;
           done
-          docker compose -f infra/langfuse-compose.yml logs --tail 50; exit 1
+          docker compose -p langfuse -f infra/langfuse-compose.yml logs --tail 50; exit 1
       - name: Langfuse accepts a trace (ingestion API, dev keys)
         run: |
           code=$(curl -s -o /tmp/resp -w '%{http_code}' -u pk-lf-duet-dev:sk-lf-duet-dev \

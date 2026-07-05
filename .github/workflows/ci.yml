@@ -43,7 +43,7 @@ jobs:
       - name: Install (pure)
         if: ${{ !matrix.full-install }}
         working-directory: agent
-        run: uv pip install pytest
+        run: uv pip install pytest numpy
       - name: Install (full MLX stack)
         if: ${{ matrix.full-install }}
         working-directory: agent
