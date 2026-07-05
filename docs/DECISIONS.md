@@ -176,6 +176,13 @@ datasource provisioned → CallStore Postgres write). All local telemetry is fai
 truth lives in JSONL regardless. Local dashboards arrive when the user installs OrbStack/Docker
 Desktop; production dashboards arrive on the Phase 4 VPS.
 
+**Update 2026-07-05 (local):** the stack now ALSO runs locally without admin rights — Colima
+v0.10 + Lima + docker CLI installed userspace (`~/.local/bin`), VM via Apple
+Virtualization.framework (`colima start --vm-type vz --cpu 4 --memory 6`). All 10 containers
+healthy; 22 calls in Postgres; Langfuse showing per-turn generations; Grafana dashboard live.
+After a reboot run `colima start` before `docker compose`. No password was ever needed — noted
+so future "needs Docker Desktop/admin" assumptions get challenged.
+
 **Measurement decisions:** app metrics go to Postgres (not Prometheus) because benchmark processes
 are short-lived — pull-based scraping needs a long-running server, which exists in Phase 4.
 Takeover/backchannel/handoff/overlap definitions in `turntaking.py` (backchannel ≤0.6 s). Cascade
