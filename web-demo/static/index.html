@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Duet — talk to it</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --dim:#8b949e;
+          --you:#58a6ff; --duet:#3fb950; --brain:#d29922; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--text); font:15px/1.5 -apple-system,system-ui,sans-serif;
+         min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:24px; }
+  h1 { font-size:20px; margin-bottom:2px; } .sub { color:var(--dim); font-size:13px; margin-bottom:18px; }
+  #stage { display:flex; gap:28px; align-items:center; margin:10px 0 16px; }
+  .orb { width:92px; height:92px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+         font-size:12px; color:var(--dim); border:2px solid var(--line); transition:box-shadow .08s, transform .08s; }
+  #orb-you  { border-color:var(--you); }  #orb-duet { border-color:var(--duet); }
+  button { background:var(--duet); color:#04260f; border:0; border-radius:24px; padding:12px 28px;
+           font-size:16px; font-weight:600; cursor:pointer; }
+  button:disabled { background:var(--line); color:var(--dim); cursor:default; }
+  #status { color:var(--dim); font-size:13px; min-height:20px; margin-bottom:14px; text-align:center; }
+  #cols { display:flex; gap:14px; width:min(980px,100%); flex:1; }
+  .col { flex:1; background:var(--panel); border:1px solid var(--line); border-radius:10px;
+         padding:14px; min-height:280px; max-height:52vh; overflow-y:auto; }
+  .col h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin-bottom:10px; }
+  .msg { margin-bottom:10px; } .msg .who { font-size:11px; color:var(--dim); }
+  .you-t { color:var(--you); } .duet-t { color:var(--duet); }
+  .chip { display:block; background:#2d2308; border:1px solid var(--brain); color:var(--brain);
+          border-radius:8px; padding:6px 10px; font-size:13px; margin-bottom:8px; }
+  #stats { color:var(--dim); font-size:12px; margin-top:12px; }
+</style>
+</head>
+<body>
+  <h1>Duet</h1>
+  <div class="sub">full-duplex voice agent · Moshi mouth + Gemini brain · everything runs on this machine except the brain</div>
+
+  <div id="stage">
+    <div class="orb" id="orb-you">you</div>
+    <button id="go">Start talking</button>
+    <div class="orb" id="orb-duet">duet</div>
+  </div>
+  <div id="status">click start — the model takes a few seconds to load</div>
+
+  <div id="cols">
+    <div class="col"><h2>Conversation</h2><div id="feed"></div></div>
+    <div class="col"><h2>Brain (async Gemini talking points → injected into speech)</h2><div id="brainfeed"></div></div>
+  </div>
+  <div id="stats"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let ws, ctx, playerNode;
+let duetLine = null, youInterim = null;
+
+function addMsg(who, text, cls) {
+  const feed = $("feed");
+  const div = document.createElement("div");
+  div.className = "msg";
+  div.innerHTML = `<div class="who">${who}</div><div class="${cls}"></div>`;
+  div.lastChild.textContent = text;
+  feed.appendChild(div);
+  feed.parentElement.scrollTop = 1e9;
+  return div.lastChild;
+}
+
+function glow(el, level) {
+  const r = Math.min(28, level * 300);
+  el.style.boxShadow = `0 0 ${r}px ${r/2}px ${el.id === "orb-you" ? "#58a6ff55" : "#3fb95055"}`;
+  el.style.transform = `scale(${1 + Math.min(0.12, level)})`;
+}
+
+async function start() {
+  $("go").disabled = true;
+  $("status").textContent = "requesting microphone…";
+  const media = await navigator.mediaDevices.getUserMedia({ audio: {
+    echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }});
+
+  ctx = new AudioContext({ sampleRate: 24000 });
+  await ctx.audioWorklet.addModule("/static/worklets.js");
+  const mic = ctx.createMediaStreamSource(media);
+  const micNode = new AudioWorkletNode(ctx, "mic-processor");
+  playerNode = new AudioWorkletNode(ctx, "player-processor");
+  mic.connect(micNode);
+  playerNode.connect(ctx.destination);
+  playerNode.port.onmessage = (e) => glow($("orb-duet"), e.data);
+
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.binaryType = "arraybuffer";
+
+  micNode.port.onmessage = (e) => {
+    const pcm = e.data;
+    let s = 0; for (let i = 0; i < pcm.length; i += 16) s += pcm[i] * pcm[i];
+    glow($("orb-you"), Math.sqrt(s / (pcm.length / 16)));
+    if (ws.readyState === 1) ws.send(pcm.buffer);
+  };
+
+  ws.onmessage = (e) => {
+    if (e.data instanceof ArrayBuffer) {
+      playerNode.port.postMessage(new Float32Array(e.data));
+      return;
+    }
+    const ev = JSON.parse(e.data);
+    if (ev.type === "status") { $("status").textContent = ev.text; if (ev.ready) $("status").style.color = "#3fb950"; }
+    else if (ev.type === "error") { $("status").textContent = "⚠ " + ev.text; $("status").style.color = "#f85149"; }
+    else if (ev.type === "you") { addMsg("you (transcribed)", ev.text, "you-t"); duetLine = null; }
+    else if (ev.type === "duet") {
+      if (!duetLine) duetLine = addMsg("duet (live)", "", "duet-t");
+      duetLine.textContent += ev.text;
+      feedScroll();
+    }
+    else if (ev.type === "brain") {
+      const c = document.createElement("span");
+      c.className = "chip";
+      c.textContent = `→ (${ev.latency_ms} ms, ${ev.intent}) ${ev.text}`;
+      $("brainfeed").appendChild(c);
+      $("brainfeed").parentElement.scrollTop = 1e9;
+    }
+    else if (ev.type === "stats") {
+      $("stats").textContent = `model step p50 ${ev.p50} ms · p95 ${ev.p95} ms (budget 80 ms) · ${ev.frames} frames`;
+    }
+  };
+  function feedScroll(){ $("feed").parentElement.scrollTop = 1e9; }
+  ws.onclose = () => { $("status").textContent = "disconnected"; $("go").disabled = false; };
+  $("go").textContent = "Live";
+}
+$("go").onclick = () => start().catch((e) => { $("status").textContent = "⚠ " + e.message; $("go").disabled = false; });
+</script>
+</body>
+</html>

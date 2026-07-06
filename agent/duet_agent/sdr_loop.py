@@ -31,6 +31,7 @@ import numpy as np
 import rustymimi
 
 from . import local_loop
+from .env import load_repo_env
 from .injector import TextInjector
 from .persona import score_lead
 from .reasoning import Guidance, ReasoningFailure, ReasoningLayer
@@ -204,6 +205,7 @@ def model_process(to_model, from_model, pcm_tap, inject_q, args):
 
 def brain_process(pcm_tap, inject_q, args):
     """Rolling ASR on the user's audio + Gemini persona calls. Fully off the hot path."""
+    load_repo_env()
     from faster_whisper import WhisperModel  # optional dep: uv pip install -e '.[live]'
 
     asr = WhisperModel("base.en", device="cpu", compute_type="int8")
@@ -345,6 +347,7 @@ def run_live(args) -> None:
 
 
 def main() -> None:
+    load_repo_env()
     parser = argparse.ArgumentParser(description="Duet Phase 2: hybrid SDR agent (Moshi mouth + Gemini brain)")
     parser.add_argument("--live", action="store_true", help="mic/speaker call (wear headphones)")
     parser.add_argument("--seconds", type=float, default=34.0, help="scripted-mode call length")
