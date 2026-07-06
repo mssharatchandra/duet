@@ -45,5 +45,9 @@ Voice demos (Apple Silicon, wear headphones):
   cd agent && uv run duet-sdr --live   # the SDR agent with the Gemini brain
   cd agent && uv run duet-sdr          # no-mic scripted version of the same
 
+Web demo (browser UI, echo-cancelled): agent/.venv/bin/python web-demo/server.py → http://localhost:8990
+  ⚠ voice quality tip: the model needs a quiet machine — stop the Langfuse stack first
+    (cd infra && docker compose -p langfuse -f langfuse-compose.yml stop) and restart it after.
+
 Benchmark clips for blind listening: eval/bench/out/clips/
 EOF

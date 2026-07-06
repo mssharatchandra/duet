@@ -202,6 +202,31 @@ temperature, injection politeness windows — and the harness now exists to meas
 That is the whole point of building the instrument first.
 ---
 
+## 0008 — 2026-07-07 — Web demo + the audio-clarity investigation
+
+**User report:** terminal demo speech unintelligible. **Root causes found by measurement, in order
+of impact:** (1) resource contention — with the observability stack + a background weights download
+running, model step p95 degraded from 50 ms to 335+ ms (ClickHouse alone at 72 % CPU; Docker VM and
+download hashing did the rest), so the speaker buffer starved into stutter; (2) no echo cancellation
+in the raw sounddevice path (Moshi heard itself on speakers); (3) zero playback buffering, so any
+jitter was audible. On a quiet system q4 measures p50 47.7 / p95 50.0 ms — unchanged from Phase 1.
+
+**Fixes shipped:** browser demo (`web-demo/`, aiohttp + WebSocket + AudioWorklets @ 24 kHz —
+one binary frame = one 80 ms Mimi frame, no resampling anywhere) with getUserMedia echo
+cancellation/noise suppression, a 320 ms jitter buffer that re-arms on underrun, server-side
+mic-backlog dropping to stay live, live caller transcript (faster-whisper), Moshi's words as
+spoken, brain-injection chips, and step-latency stats on the page.
+
+**q4 vs q8 decision (measured, quiet system, M5):** q4 p50 47.7 / p95 50.0 ms (+30 ms headroom) vs
+q8 p50 74.3 / p95 91.0 ms (−11 ms at p95, 8.3 GB Metal). **q4 stays the default** — q8's marginal
+voice quality loses to the stutter its missed deadlines cause; `-q 8` remains for faster hardware.
+
+**Ops lessons:** real-time inference and an analytics warehouse don't share a laptop — the demo
+script now says to stop the Langfuse stack before voice demos (production separates these machines
+anyway). And every long-running background job on a Mac gets `caffeinate`, no exceptions — sleep
+killed both a benchmark run and this weights download.
+---
+
 ## Running spend
 
 | Date | Item | Cost | Total |

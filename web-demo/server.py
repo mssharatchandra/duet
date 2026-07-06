@@ -83,9 +83,25 @@ class Session:
             return
         self.emit(type="status", text=f"ready — Moshi loaded in {load_s:.1f}s. Say hi!", ready=True)
 
+        # One-frame pipeline: while the Rust codec encodes THIS frame on its own
+        # threads, the model steps on the PREVIOUS frame's tokens, and decoded
+        # output is drained opportunistically. Serializing these (encode-wait →
+        # step → decode-wait) measured 92 ms/frame — over the 80 ms budget that
+        # each stage individually meets with room to spare. Costs one frame
+        # (80 ms) of added response latency; buys back ~40 ms of budget per tick.
         last_stats = time.time()
         dropped = 0
+        pending_tokens = None
         while self.running:
+            while True:  # drain decoded agent audio (never block on it)
+                got = codec.get_decoded()
+                if got is None:
+                    break
+                try:
+                    self.spk_q.put_nowait(np.asarray(got, np.float32)[:FRAME])
+                except queue.Full:
+                    pass
+
             try:
                 pcm = self.mic_q.get(timeout=0.5)
             except queue.Empty:
@@ -104,30 +120,22 @@ class Session:
             except queue.Full:
                 pass
 
-            t0 = time.perf_counter()
-            codec.encode(pcm)
+            codec.encode(pcm)  # submit; Rust encodes while we step below
+            if pending_tokens is not None:
+                t0 = time.perf_counter()
+                audio_out, piece = local_loop.step_once(gen, tok, pending_tokens)
+                self.step_ms.append((time.perf_counter() - t0) * 1e3)
+                if piece is not None:
+                    self.emit(type="duet", text=piece)
+                if audio_out is not None:
+                    codec.decode(audio_out)  # submit only; drained at loop top
+
             deadline = time.time() + 30
-            while (data := codec.get_encoded()) is None:
+            while (pending_tokens := codec.get_encoded()) is None:
                 if time.time() > deadline or not self.running:
                     return
                 time.sleep(0.001)
-            audio_out, piece = local_loop.step_once(gen, tok, data)
-            self.step_ms.append((time.perf_counter() - t0) * 1e3)
-            if piece is not None:
-                self.emit(type="duet", text=piece)
-            if audio_out is not None:
-                codec.decode(audio_out)
-                got = codec.get_decoded()
-                for _ in range(200):
-                    if got is not None:
-                        break
-                    time.sleep(0.001)
-                    got = codec.get_decoded()
-                if got is not None:
-                    try:
-                        self.spk_q.put_nowait(np.asarray(got, np.float32)[:FRAME])
-                    except queue.Full:
-                        pass
+
             if time.time() - last_stats > 2 and self.step_ms:
                 arr = np.array(self.step_ms[-100:])
                 self.emit(type="stats", p50=round(float(np.percentile(arr, 50)), 1),
@@ -240,8 +248,9 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
 def main() -> None:
     load_repo_env()
     ap = argparse.ArgumentParser()
-    ap.add_argument("-q", "--quantized", type=int, choices=[4, 8], default=8,
-                    help="8-bit default: audibly cleaner voice, still real-time on M-series")
+    ap.add_argument("-q", "--quantized", type=int, choices=[4, 8], default=4,
+                    help="4 is the default by measurement: q8 misses the 80 ms budget on M5 "
+                         "(p95 91 ms vs q4's 50 ms) and smoothness beats bits for clarity")
     ap.add_argument("--hf-repo", default=None)
     ap.add_argument("--steps", type=int, default=4000)
     ap.add_argument("--port", type=int, default=8990)
