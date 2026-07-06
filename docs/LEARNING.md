@@ -1,5 +1,9 @@
 # LEARNING.md — the voice-AI curriculum
 
+**Start here if you're new: [Voice AI: the 80% you need, for 20% of the effort](blog/voice-ai-the-80-20.md)** —
+the whole project's learnings as one readable post, every claim backed by a measurement in this repo.
+The lessons below then go deeper, keyed to the actual code.
+
 This project doubles as a noob→expert course in real-time speech AI. Each phase of the build
 unlocks a lesson; each lesson is written *after* building, so it explains real code in this repo,
 not textbook abstractions. Checkboxes = what you should be able to explain to someone else.
