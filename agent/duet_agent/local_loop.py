@@ -102,7 +102,8 @@ def load_model(args, on_text_hook=None) -> tuple[models.LmGen, "sentencepiece.Se
         model=model,
         max_steps=args.steps + 5,  # KV-cache length: 4000 frames × 80 ms ≈ 5.3 min max session
         text_sampler=utils.Sampler(),
-        audio_sampler=utils.Sampler(),
+        # lower audio temp = cleaner, flatter speech; higher = livelier, riskier
+        audio_sampler=utils.Sampler(temp=getattr(args, "temp", 0.8)),
         check=False,
         on_text_hook=on_text_hook,
     )
@@ -299,6 +300,7 @@ def main() -> None:
     parser.add_argument("--bf16", action="store_true", help="full-precision weights (needs ~16 GB free)")
     parser.add_argument("--hf-repo", type=str, default=None)
     parser.add_argument("--steps", type=int, default=4000, help="max frames per session (4000 ≈ 5.3 min)")
+    parser.add_argument("--temp", type=float, default=0.8, help="audio sampling temperature (0.6 = cleaner/flatter)")
     parser.add_argument("--headless", type=int, default=0, metavar="N",
                         help="benchmark N frames with silent input instead of running mic/speaker")
     args = parser.parse_args()

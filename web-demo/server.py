@@ -15,6 +15,7 @@
 
 import argparse
 import asyncio
+import os
 import queue
 import sys
 import threading
@@ -27,6 +28,7 @@ from aiohttp import WSMsgType, web
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
 
 from duet_agent import local_loop  # noqa: E402
+from duet_agent.asr_util import to_whisper_rate  # noqa: E402
 from duet_agent.env import load_repo_env  # noqa: E402
 from duet_agent.injector import TextInjector  # noqa: E402
 from duet_agent.reasoning import Guidance, ReasoningFailure, ReasoningLayer  # noqa: E402
@@ -75,7 +77,7 @@ class Session:
         self.emit(type="status", text=f"loading Moshi ({self.args.hf_repo}) …")
         try:
             gen, tok, load_s = local_loop.load_model(self.args, on_text_hook=hook)
-            self.injector = TextInjector(encode=lambda s: list(tok.encode(s)))  # type: ignore
+            self.injector = TextInjector(encode=lambda s: list(tok.encode(s)), pace_pads=2)  # type: ignore
             codec = rustymimi.StreamTokenizer(
                 huggingface_hub.hf_hub_download(self.args.hf_repo, "tokenizer-e351c8d8-checkpoint125.safetensors"))  # type: ignore
         except Exception as e:
@@ -147,7 +149,7 @@ class Session:
     def _brain_loop(self) -> None:
         try:
             from faster_whisper import WhisperModel
-            asr = WhisperModel("base.en", device="cpu", compute_type="int8")
+            asr = WhisperModel(os.environ.get("ASR_MODEL", "small.en"), device="cpu", compute_type="int8")
         except Exception as e:
             self.emit(type="status", text=f"ASR unavailable ({e}) — transcript disabled, Moshi still works")
             asr = None
@@ -177,7 +179,7 @@ class Session:
                     if quiet >= 8 and voiced >= 4:  # ≥0.3 s speech then 0.6 s silence
                         audio = np.concatenate(buf)
                         buf, voiced, quiet = [], 0, 0
-                        segments, _ = asr.transcribe(audio, language="en", beam_size=1)
+                        segments, _ = asr.transcribe(to_whisper_rate(audio), language="en", beam_size=1)
                         text = " ".join(s.text.strip() for s in segments).strip()
                         if text:
                             self.emit(type="you", text=text)
@@ -253,6 +255,7 @@ def main() -> None:
                          "(p95 91 ms vs q4's 50 ms) and smoothness beats bits for clarity")
     ap.add_argument("--hf-repo", default=None)
     ap.add_argument("--steps", type=int, default=4000)
+    ap.add_argument("--temp", type=float, default=0.8, help="audio sampling temperature (0.6 = cleaner/flatter)")
     ap.add_argument("--port", type=int, default=8990)
     args = ap.parse_args()
     if args.hf_repo is None:

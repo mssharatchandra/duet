@@ -22,6 +22,7 @@
 
 import argparse
 import multiprocessing
+import os
 import queue
 import time
 
@@ -31,6 +32,7 @@ import numpy as np
 import rustymimi
 
 from . import local_loop
+from .asr_util import to_whisper_rate
 from .env import load_repo_env
 from .injector import TextInjector
 from .persona import score_lead
@@ -74,7 +76,7 @@ def run_scripted(args) -> None:
             _make_hook(injector)(text_tokens)
 
     gen, text_tokenizer, load_s = local_loop.load_model(args, on_text_hook=hook)
-    injector = TextInjector(encode=lambda s: list(text_tokenizer.encode(s)))  # type: ignore
+    injector = TextInjector(encode=lambda s: list(text_tokenizer.encode(s)), pace_pads=2)  # type: ignore
     brain = ReasoningLayer()
     print(f"[sdr] Moshi loaded in {load_s:.1f}s · brain model: {brain.model}")
 
@@ -208,7 +210,7 @@ def brain_process(pcm_tap, inject_q, args):
     load_repo_env()
     from faster_whisper import WhisperModel  # optional dep: uv pip install -e '.[live]'
 
-    asr = WhisperModel("base.en", device="cpu", compute_type="int8")
+    asr = WhisperModel(os.environ.get("ASR_MODEL", "small.en"), device="cpu", compute_type="int8")
     brain = ReasoningLayer()
     history: list[tuple[str, str]] = []
     buf: list[np.ndarray] = []
@@ -236,7 +238,7 @@ def brain_process(pcm_tap, inject_q, args):
                 if quiet_frames >= 8 and voiced_frames >= 5:
                     audio = np.concatenate(buf)
                     buf, voiced_frames, quiet_frames = [], 0, 0
-                    segments, _ = asr.transcribe(audio, language="en", beam_size=1)
+                    segments, _ = asr.transcribe(to_whisper_rate(audio), language="en", beam_size=1)
                     text = " ".join(s.text.strip() for s in segments).strip()
                     if text:
                         history.append(("lead", text))

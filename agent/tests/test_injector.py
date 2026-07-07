@@ -107,3 +107,13 @@ def test_never_splices_mid_utterance():
     inj.inject("second pitch")           # brain got eager — must not clobber
     assert inj.hook(0) == 101            # still finishing the first phrase
     assert inj.state is State.IDLE
+
+
+def test_pace_pads_interleaved_between_forced_tokens():
+    inj, _ = make(pace_pads=2)
+    inj.inject("hi there")           # 2 words → tokens 100, 101
+    quiet_down(inj)
+    got = [inj.hook(PAD) for _ in range(6)]
+    assert got == [100, PAD, PAD, 101, PAD, PAD]  # breaths between words
+    assert inj.state is State.IDLE
+    assert inj.injected == 1

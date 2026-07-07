@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "agent"))
 
 from duet_agent import local_loop, telemetry, turntaking  # noqa: E402
+from duet_agent.asr_util import to_whisper_rate  # noqa: E402
 from duet_agent.injector import TextInjector  # noqa: E402
 from duet_agent.reasoning import Guidance, ReasoningLayer  # noqa: E402
 
@@ -251,7 +252,7 @@ def run_cascade(scenario: dict, tracer, args) -> dict:
         u_end = u_start + user_dur
 
         t0 = time.perf_counter()
-        segments, _ = _asr.transcribe(user_pcm, language="en", beam_size=1)
+        segments, _ = _asr.transcribe(to_whisper_rate(user_pcm), language="en", beam_size=1)
         asr_text = " ".join(s.text.strip() for s in segments).strip() or turn["text"]
         asr_s = time.perf_counter() - t0
 

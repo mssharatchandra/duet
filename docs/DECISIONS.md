@@ -227,6 +227,26 @@ anyway). And every long-running background job on a Mac gets `caffeinate`, no ex
 killed both a benchmark run and this weights download.
 ---
 
+## 0009 — 2026-07-07 — Humanization round: the 16 kHz ASR bug, paced injection, temp knob
+
+**STT was inaccurate for a hard reason, not a model reason:** faster-whisper assumes **16 kHz**
+for raw numpy input; every live path fed it our pipeline-native **24 kHz** audio unresampled, so
+it heard everything slowed 1.5×. Fixed via shared `duet_agent/asr_util.to_whisper_rate()` in the
+web server, live SDR mode, and the benchmark cascade (whose measured ASR latencies were on
+wrong-rate audio — rerun before publishing cascade numbers anywhere new). ASR model default
+upgraded base.en → **small.en** (env `ASR_MODEL`), still CPU-side and off the hot path.
+Lesson generalized: one-sample-rate-end-to-end failed silently at the single boundary we forgot.
+
+**"In a hurry" diagnosed:** forced injection fed content tokens back-to-back at 12.5 tokens/s with
+none of the pad-token breaths natural Moshi speech interleaves. `TextInjector(pace_pads=2)` now
+inserts 2 pads per token in live/demo paths (≈4 tokens/s). Cost: injections occupy ~3× more
+frames, so barge-in cancels them more often — correct behavior, verified in scripted mode.
+
+**Voice character knob:** `--temp` exposed on duet-local and the web server (audio sampler;
+0.8 default, 0.6 = cleaner/flatter). Robotic timbre itself remains a model ceiling (1B decoder,
+streaming codec bitrate, q4) — documented honestly in the blog §7.
+---
+
 ## Running spend
 
 | Date | Item | Cost | Total |

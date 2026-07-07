@@ -46,8 +46,14 @@ class TextInjector:
         barge_frames_to_cancel: int = 4,   # ~0.3 s of user speech kills the script
         user_rms_threshold: float = 0.02,
         stale_after_s: float = 8.0,
+        pace_pads: int = 0,
         now: Callable[[float], float] | None = None,
     ):
+        # pace_pads: pad tokens interleaved after each forced token. Forcing
+        # content tokens back-to-back (one per 80 ms frame) speaks ~12 tokens/s
+        # — audibly rushed, because natural Moshi speech breathes pads between
+        # words. 2 pads ≈ natural pace at the cost of a slightly longer slot.
+        self._pace = pace_pads
         self._encode = encode
         self._pad_ids = pad_ids
         self._quiet_needed = quiet_frames_to_start
@@ -73,7 +79,14 @@ class TextInjector:
         un-started older one (the brain knows more now than it did then)."""
         if self.state == State.FORCING:
             return  # never splice mid-utterance; current point finishes first
-        self._tokens = deque(self._encode(" " + phrase.strip()))
+        ids = self._encode(" " + phrase.strip())
+        if self._pace:
+            paced: list[int] = []
+            for tok in ids:
+                paced.append(tok)
+                paced.extend([self._pad_ids[-1]] * self._pace)
+            ids = paced
+        self._tokens = deque(ids)
         self._queued_at = self._now()
         self.state = State.ARMED
 
