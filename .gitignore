@@ -30,6 +30,11 @@ recordings/
 *.mp3
 !eval/fixtures/**/*.wav
 
+# Captured web-demo sessions (opt-in ASR eval recordings — real mic audio, stays local; see
+# web-demo/capture.py and docs/DECISIONS.md 0012). *.wav above already covers the audio; the
+# JSONL rows carry transcripts, so keep the whole directory out of git, not just the binaries.
+eval/asr/sessions/
+
 # OS / editor
 .DS_Store
 .idea/

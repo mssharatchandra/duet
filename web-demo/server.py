@@ -8,13 +8,19 @@
 # (the inner monologue), brain injections, and audio levels.
 #
 # Transport: one WebSocket. Binary frames = 1920-sample float32 PCM @ 24 kHz
-# (one 80 ms Mimi frame) in each direction. Text frames = JSON events.
+# (one 80 ms Mimi frame) in each direction. Text frames = JSON control/events
+# in both directions — see `ctrl.get("type") == "control"` below for the one
+# the browser sends (the "record this session" toggle).
 # The browser's AudioContext runs at 24 kHz so no resampling happens anywhere.
 #
 # Run:  agent/.venv/bin/python web-demo/server.py   →  http://localhost:8990
+# Run without loading Moshi (ASR/brain/capture only, e.g. to test --capture
+# without a GPU or while another process is using the model):
+#       agent/.venv/bin/python web-demo/server.py --no-model --capture
 
 import argparse
 import asyncio
+import json
 import os
 import queue
 import sys
@@ -27,14 +33,23 @@ from aiohttp import WSMsgType, web
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
 
-from duet_agent import local_loop  # noqa: E402
 from duet_agent.asr_util import to_whisper_rate  # noqa: E402
 from duet_agent.env import load_repo_env  # noqa: E402
 from duet_agent.injector import TextInjector  # noqa: E402
 from duet_agent.reasoning import Guidance, ReasoningFailure, ReasoningLayer  # noqa: E402
 
-FRAME = local_loop.FRAME_SIZE
+from capture import SessionCapture  # noqa: E402  — pure module, see capture.py header; safe under --no-model
+
+# NOTE: `duet_agent.local_loop` (and therefore mlx / moshi_mlx / rustymimi) is deliberately NOT
+# imported at module scope. It's imported lazily, only on the path that actually loads Moshi
+# (Session._model_loop's real branch, and main()'s hf-repo default resolution) so that
+# `--no-model` starts this server without ever touching the model stack — required so the
+# capture feature can be built/tested while another process may be using the GPU (DECISIONS 0008).
+FRAME = 1_920  # duplicated from local_loop.FRAME_SIZE — see the import note above for why
 STATIC = Path(__file__).parent / "static"
+SESSIONS_DIR = Path(__file__).resolve().parents[1] / "eval" / "asr" / "sessions"
+CAPTURES: dict[str, SessionCapture] = {}  # session_id -> capture, kept for the process lifetime so
+                                           # /corrections can still land after the WS disconnects
 
 
 class Session:
@@ -49,9 +64,24 @@ class Session:
         self.running = True
         self.injector: TextInjector | None = None
         self.step_ms: list[float] = []
+        # session capture — opt-in only; see enable_capture(). session_id doubles as the
+        # eval/asr/sessions/<session_id>/ directory name once capture is turned on.
+        self.session_id = f"{int(time.time())}-{os.urandom(3).hex()}"
+        self.capture: SessionCapture | None = None
+        if getattr(args, "capture", False):
+            self.enable_capture()
 
     def emit(self, **ev) -> None:
         self.events.put(ev)
+
+    def enable_capture(self) -> None:
+        """Turn on session recording. Idempotent — a second call (e.g. CLI --capture plus a
+        redundant UI toggle) is a no-op, not a second directory."""
+        if self.capture is not None:
+            return
+        self.capture = SessionCapture(SESSIONS_DIR / self.session_id)
+        CAPTURES[self.session_id] = self.capture
+        self.emit(type="capture_status", enabled=True, session_id=self.session_id)
 
     def start(self) -> None:
         threading.Thread(target=self._model_loop, daemon=True).start()
@@ -63,9 +93,14 @@ class Session:
     # -- the 80 ms heartbeat ------------------------------------------------
 
     def _model_loop(self) -> None:
+        if self.args.no_model:
+            self._model_loop_stub()
+            return
+
         import huggingface_hub
         import mlx.core as mx
         import rustymimi
+        from duet_agent import local_loop
 
         def hook(text_tokens):
             if self.injector is not None:
@@ -144,6 +179,23 @@ class Session:
                           p95=round(float(np.percentile(arr, 95)), 1), frames=len(self.step_ms))
                 last_stats = time.time()
 
+    def _model_loop_stub(self) -> None:
+        """--no-model path: no mlx/moshi_mlx/rustymimi import, no weights, no GPU memory —
+        required so --capture can be developed/tested without a model load while another
+        process may be using the GPU (docs/DECISIONS.md 0008 on resource contention). Mic
+        frames still flow to the brain thread via tap_q; there's just no mouth to speak back,
+        so the speaker stays silent and no `duet`/`stats` events are ever emitted."""
+        self.emit(type="status", text="--no-model: Moshi skipped — ASR/brain/capture only", ready=True)
+        while self.running:
+            try:
+                pcm = self.mic_q.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                self.tap_q.put_nowait(pcm)
+            except queue.Full:
+                pass
+
     # -- the slow brain -------------------------------------------------------
 
     def _brain_loop(self) -> None:
@@ -167,6 +219,12 @@ class Session:
                 pcm = self.tap_q.get(timeout=0.5)
             except queue.Empty:
                 pcm = None
+            # Feed capture the SAME frame, in the SAME order, as the inline segmenter below —
+            # both run identical thresholds (SessionCapture mirrors these on purpose, see
+            # capture.py's header), so they close an utterance on the exact same frame. That's
+            # what lets `cap_record` below be the capture-side record for whatever text the ASR
+            # branch produces this iteration, with no separate alignment bookkeeping needed.
+            cap_record = self.capture.add_frame(pcm) if (pcm is not None and self.capture is not None) else None
             if pcm is not None and asr is not None:
                 rms = float(np.sqrt(np.mean(pcm**2)))
                 if rms > 0.015:
@@ -183,6 +241,10 @@ class Session:
                         text = " ".join(s.text.strip() for s in segments).strip()
                         if text:
                             self.emit(type="you", text=text)
+                            if self.capture is not None and cap_record is not None:
+                                self.capture.set_hypothesis(cap_record.utterance_id, text)
+                                self.emit(type="captured", utterance_id=cap_record.utterance_id,
+                                          asr_hypothesis=text, duration_s=cap_record.duration_s)
                             if brain:
                                 brain.request(history, text)
                             history.append(("lead", text))
@@ -238,6 +300,16 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                     session.mic_q.put_nowait(np.frombuffer(msg.data, np.float32).copy())
                 except queue.Full:
                     pass
+            elif msg.type == WSMsgType.TEXT:
+                # The one control message the browser sends us (everything else on this socket
+                # is server → browser JSON events): the "record this session" toggle. Ignore
+                # anything malformed rather than tearing down the session over a bad control frame.
+                try:
+                    ctrl = json.loads(msg.data)
+                except ValueError:
+                    continue
+                if ctrl.get("type") == "control" and ctrl.get("capture"):
+                    session.enable_capture()
             elif msg.type == WSMsgType.ERROR:
                 break
     finally:
@@ -245,6 +317,36 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
         pump_task.cancel()
         active["session"] = None
     return ws
+
+
+async def corrections_handler(request: web.Request) -> web.Response:
+    """POST /corrections — human-in-the-loop ground truth for a captured session.
+
+    Body: {"session_id": "...", "corrections": [{"utterance_id": "...", "ground_truth": "..."}]}.
+    Looked up via the module-level CAPTURES registry (not `active["session"]`) so this works
+    after the WebSocket has closed — the whole point of the UI flow is "stop talking, THEN
+    review and correct," and by then session.capture may already be an orphaned reference.
+    """
+    try:
+        body = await request.json()
+    except (ValueError, TypeError) as e:
+        return web.json_response({"ok": False, "error": f"invalid JSON body: {e}"}, status=400)
+
+    session_id = body.get("session_id")
+    capture = CAPTURES.get(session_id)
+    if capture is None:
+        return web.json_response({"ok": False, "error": f"unknown session_id {session_id!r}"}, status=404)
+
+    applied: list[str] = []
+    unknown: list[str] = []
+    for item in body.get("corrections", []):
+        utterance_id = item.get("utterance_id")
+        ground_truth = item.get("ground_truth", "")
+        if utterance_id and capture.apply_correction(utterance_id, ground_truth):
+            applied.append(utterance_id)
+        else:
+            unknown.append(utterance_id)
+    return web.json_response({"ok": True, "applied": applied, "unknown": unknown})
 
 
 def main() -> None:
@@ -257,16 +359,26 @@ def main() -> None:
     ap.add_argument("--steps", type=int, default=4000)
     ap.add_argument("--temp", type=float, default=0.8, help="audio sampling temperature (0.6 = cleaner/flatter)")
     ap.add_argument("--port", type=int, default=8990)
+    ap.add_argument("--no-model", action="store_true",
+                     help="skip loading Moshi entirely — ASR/brain/capture only. For developing/testing "
+                          "the capture feature without a GPU-heavy model load (never run Moshi and this "
+                          "flag at once from the same invocation; see docs/DECISIONS.md 0008 on contention).")
+    ap.add_argument("--capture", action="store_true",
+                     help="opt-in session recording, ON for every session from server start (off by "
+                          "default). The web UI also has a per-session toggle for the same thing.")
     args = ap.parse_args()
-    if args.hf_repo is None:
+    if args.hf_repo is None and not args.no_model:
+        from duet_agent import local_loop  # deferred — see the import note near FRAME above
         args.hf_repo = local_loop.DEFAULT_REPOS[args.quantized]
 
     app = web.Application()
     app["args"] = args
     app.router.add_get("/ws", ws_handler)
+    app.router.add_post("/corrections", corrections_handler)
     app.router.add_get("/", lambda r: web.FileResponse(STATIC / "index.html"))
     app.router.add_static("/static", STATIC)
-    print(f"Duet web demo → http://localhost:{args.port}  (model: {args.hf_repo})")
+    mode = "NO-MODEL (ASR/brain/capture only)" if args.no_model else f"model: {args.hf_repo}"
+    print(f"Duet web demo → http://localhost:{args.port}  ({mode}, capture default {'ON' if args.capture else 'off'})")
     web.run_app(app, port=args.port, print=None)
 
 

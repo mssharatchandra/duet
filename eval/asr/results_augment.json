@@ -1,0 +1,26 @@
+[
+  {
+    "model": "mlx:mlx-community/whisper-large-v3-turbo",
+    "load_s": 2.3598092500469647,
+    "conditions": {
+      "clean": {
+        "wer": 0.0,
+        "rtf": 0.28849729860440637,
+        "worst": [
+          0.0,
+          "That sounds way too expensive for a small shop like ours.",
+          "That sounds way too expensive for a small shop like ours."
+        ]
+      },
+      "snr10": {
+        "wer": 0.0,
+        "rtf": 0.2978562514340792,
+        "worst": [
+          0.0,
+          "That sounds way too expensive for a small shop like ours.",
+          "That sounds way too expensive for a small shop like ours."
+        ]
+      }
+    }
+  }
+]

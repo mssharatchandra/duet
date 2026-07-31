@@ -217,6 +217,165 @@ def run_duet(scenario: dict, tracer, args) -> dict:
     return _record(scenario, "duet", report, frame * FRAME_S, gpu_seconds, brain, trace_id)
 
 
+# -------------------------------------------------------------- hybrid mode
+
+def run_hybrid(scenario: dict, tracer, args) -> dict:
+    """Moshi as a TURN-TAKING ORACLE driving a quality voice.
+
+    The thesis being tested: today you must choose between the most human
+    *timing* (a duplex model) and the most human *voice* (a good TTS). Maybe
+    you don't. Here Moshi still consumes the caller's audio every 80 ms and
+    still decides when to vocalize — but its audio is never played. Its speech
+    ONSET is the trigger; what the caller actually hears is TTS.
+
+    Why this could beat both baselines:
+      * vs cascade — the decision to speak comes from a model trained on
+        overlapping human conversation, not from a silence timer, so there is
+        no endpoint wait, and barge-in cuts playback instantly.
+      * vs pure Moshi — the voice is whatever TTS you like.
+
+    Why it might lose, stated before measuring: the oracle fires on Moshi's own
+    conversational impulse, which may not align with when our *scripted* content
+    is ready; and a TTS utterance has its own duration, so the tight
+    call-and-response rhythm Moshi produces natively can smear.
+
+    TTS time-to-first-byte is masked by pre-synthesizing the moment the brain
+    returns text — which lands ~1 s before the oracle fires. That masking is a
+    real architectural property, not a benchmark trick, but it is only valid
+    while the brain leads the oracle; the report flags it if that stops holding.
+    """
+    import huggingface_hub
+    import rustymimi
+
+    gen, tok, _ = local_loop.load_model(args)  # no injector: we don't steer Moshi's words
+    codec = rustymimi.StreamTokenizer(
+        huggingface_hub.hf_hub_download(args.hf_repo, "tokenizer-e351c8d8-checkpoint125.safetensors"))  # type: ignore
+
+    trace_id = tracer.trace("hybrid-call", {"mode": "hybrid", "scenario": scenario["id"]})
+    brain = ReasoningLayer()
+    brain.tracer, brain.trace_id = tracer, trace_id
+
+    backchannel = frames_of(synth("Mm-hm."))
+    turns = list(scenario["turns"])
+    turn_frames: list[np.ndarray] = []
+    tts_frames: list[np.ndarray] = []     # what the caller actually hears
+    pending: list[np.ndarray] | None = None   # pre-synthesized talking point
+    user_active: list[bool] = []
+    agent_active: list[bool] = []
+    caller_track: list[np.ndarray] = []
+    agent_track: list[np.ndarray] = []
+    history: list[tuple[str, str]] = []
+    silence = np.zeros(FRAME, np.float32)
+
+    moshi_prev = False
+    agent_run = agent_quiet = 0
+    user_loud_run = 0
+    answered = True
+    wait_since_turn = 0.0
+    oracle_fires = barge_cuts = backchannels_spoken = 0
+    synth_masked_ms: list[float] = []
+    t_start = time.perf_counter()
+
+    frame = 0
+    while frame < args.steps - 10:
+        t = frame * FRAME_S
+        if turns and not turn_frames:
+            barge = turns[0].get("barge", False)
+            due = (
+                (frame == 12) if not history else (
+                    (agent_run >= round(BARGE_AFTER_S / FRAME_S)) if barge
+                    else (answered and agent_quiet >= round(CALLER_GAP_S / FRAME_S))
+                )
+            )
+            if due or (history and t - wait_since_turn > 10.0):
+                turn = turns.pop(0)
+                turn_frames = frames_of(synth(turn["text"]))
+                brain.request(history, turn["text"])
+                history.append(("lead", turn["text"]))
+                answered = False
+                wait_since_turn = t
+
+        result = brain.poll()
+        if isinstance(result, Guidance):
+            t0 = time.perf_counter()
+            pending = frames_of(synth(result.talking_point))  # pre-synthesize while waiting for the oracle
+            synth_masked_ms.append((time.perf_counter() - t0) * 1e3)
+            history.append(("agent", result.talking_point))
+
+        user_frame = turn_frames.pop(0) if turn_frames else silence
+        u_rms = float(np.sqrt(np.mean(user_frame**2)))
+        caller_track.append(user_frame)
+        user_active.append(u_rms > RMS_USER)
+        user_loud_run = user_loud_run + 1 if u_rms > RMS_USER else 0
+
+        # Rule: the user always wins. The oracle tells us the caller took the
+        # floor long before a silence timer would, so playback dies immediately.
+        if tts_frames and user_loud_run >= round(0.24 / FRAME_S):
+            tts_frames = []
+            barge_cuts += 1
+
+        # --- the oracle: Moshi hears everything, speaks to no one ---
+        codec.encode(user_frame)
+        deadline = time.time() + 30
+        while (data := codec.get_encoded()) is None:
+            if time.time() > deadline:
+                raise RuntimeError("encoder stalled")
+            time.sleep(0.001)
+        audio_out, _piece = local_loop.step_once(gen, tok, data)
+        moshi_pcm = silence
+        if audio_out is not None:
+            codec.decode(audio_out)
+            got = codec.get_decoded()
+            for _ in range(200):
+                if got is not None:
+                    break
+                time.sleep(0.001)
+                got = codec.get_decoded()
+            if got is not None:
+                moshi_pcm = np.asarray(got, np.float32)[:FRAME]
+        moshi_now = float(np.sqrt(np.mean(moshi_pcm**2))) > RMS_AGENT
+
+        # Onset = Moshi decided to vocalize. Substance if we have it, else a
+        # backchannel — the oracle signals *that* it would speak; the pending
+        # talking point decides *what*.
+        if moshi_now and not moshi_prev and not tts_frames:
+            oracle_fires += 1
+            if pending:
+                tts_frames, pending = pending, None
+            elif not turn_frames:
+                tts_frames = list(backchannel)
+                backchannels_spoken += 1
+        moshi_prev = moshi_now
+
+        a_pcm = tts_frames.pop(0) if tts_frames else silence
+        agent_track.append(a_pcm)
+        active = float(np.sqrt(np.mean(a_pcm**2))) > RMS_AGENT
+        agent_active.append(active)
+        agent_run = agent_run + 1 if active else 0
+        agent_quiet = agent_quiet + 1 if not active else 0
+        if active and not answered and not turn_frames:
+            answered = True
+
+        frame += 1
+        if not turns and not turn_frames and not tts_frames and answered and agent_quiet >= round(1.6 / FRAME_S):
+            break
+        if frame >= args.steps - 12:
+            break
+
+    gpu_seconds = time.perf_counter() - t_start
+    n = min(len(caller_track), len(agent_track))
+    mixed = np.concatenate(caller_track[:n]) + np.concatenate(agent_track[:n])
+    write_wav(OUT / "clips" / f"hybrid-{scenario['id']}.wav", mixed)
+
+    report = turntaking.analyze(user_active, agent_active)
+    rec = _record(scenario, "hybrid", report, frame * FRAME_S, gpu_seconds, brain, trace_id)
+    rec["_oracle_fires"] = oracle_fires
+    rec["_barge_cuts"] = barge_cuts
+    rec["_backchannels_spoken"] = backchannels_spoken
+    rec["_tts_synth_ms_avg"] = round(float(np.mean(synth_masked_ms)), 1) if synth_masked_ms else None
+    return rec
+
+
 # ------------------------------------------------------------- cascade mode
 
 _asr = None
@@ -311,7 +470,7 @@ def _record(scenario, mode, report, duration_s, gpu_seconds, brain, trace_id) ->
 def main() -> int:
     load_env()
     ap = argparse.ArgumentParser()
-    ap.add_argument("--modes", default="duet,cascade")
+    ap.add_argument("--modes", default="duet,cascade,hybrid")
     ap.add_argument("--limit", type=int, default=0, help="run only the first N scenarios")
     ap.add_argument("-q", "--quantized", type=int, default=4, choices=[4, 8])
     ap.add_argument("--hf-repo", default=None)
@@ -327,9 +486,10 @@ def main() -> int:
     store = telemetry.CallStore()
     OUT.mkdir(parents=True, exist_ok=True)
 
+    runners = {"duet": run_duet, "cascade": run_cascade, "hybrid": run_hybrid}
     records = []
     for mode in args.modes.split(","):
-        runner = run_duet if mode == "duet" else run_cascade
+        runner = runners[mode]
         for sc in scenarios:
             t0 = time.time()
             rec = runner(sc, tracer, args)
