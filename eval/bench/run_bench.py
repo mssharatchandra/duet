@@ -510,12 +510,22 @@ def main() -> int:
         if not rs:
             continue
         hand = [h for r in rs for h in r["_handoffs_ms"]]
+        # A mode can legitimately produce zero handoffs (the agent never spoke
+        # after a user turn) — that is a RESULT, not a crash. Losing a 20-scenario
+        # run at the final summary step because one config stayed silent would be
+        # a spectacularly expensive way to learn that.
+        p50 = f"{np.percentile(hand, 50):.0f} ms" if hand else "— (silent)"
+        p95 = f"{np.percentile(hand, 95):.0f} ms" if hand else "— (silent)"
         row = (f"| {mode} | {len(rs)} | {np.mean([r['takeover_rate'] for r in rs]):.2f} "
                f"| {np.mean([r['backchannels'] for r in rs]):.1f} "
-               f"| {np.percentile(hand, 50):.0f} ms | {np.percentile(hand, 95):.0f} ms "
+               f"| {p50} | {p95} "
                f"| {np.mean([r['overlap_ratio'] for r in rs]):.3f} "
                f"| ${np.mean([r['cost_per_min_usd'] for r in rs]):.4f} |")
         lines.append(row)
+        if not hand:
+            lines.append(f"| ↳ {mode} diagnostics | " + " | ".join(
+                f"{k.lstrip('_')}={sum(r.get(k, 0) or 0 for r in rs)}"
+                for k in ("_oracle_fires", "_barge_cuts", "_backchannels_spoken")) + " | | | |")
     table = "\n".join(lines)
     print(table)
     (OUT / "summary.md").write_text(table + "\n")
