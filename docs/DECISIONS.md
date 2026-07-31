@@ -247,6 +247,68 @@ frames, so barge-in cancels them more often — correct behavior, verified in sc
 streaming codec bitrate, q4) — documented honestly in the blog §7.
 ---
 
+## 0010 — 2026-07-07 — ⚠️ PROPOSED (awaiting decision): ecosystem integration strategy + Fish Audio verdict
+
+**Organizing principle: integrate by latency class.** Duet has three tiers with different budgets, and
+every integration question resolves cleanly once you ask which tier it touches.
+
+| Tier | Budget | External calls? |
+|---|---|---|
+| A — the mouth (Moshi loop) | 80 ms, hard | **Never.** No API, no MCP, no network. A network call here is architecturally forbidden; it recreates the cascade we exist to replace. |
+| B — the brain (ReasoningLayer) | ~1 s, async, maskable | **Yes — MCP belongs here.** |
+| C — transport/platform | connection-time | **Yes — this is where deployability lives.** |
+
+**Tier B proposal — MCP tools in the brain.** `ReasoningLayer` already returns structured JSON; adding
+MCP tool-calling lets the SDR agent *do* things instead of talking about them: check calendar
+availability, book the demo, look up/create the CRM record, log call outcome. Demo impact is the
+difference between "shall we book a demo?" and a real calendar invite landing during the call. Cost:
+none beyond token use; MCP servers for calendar/CRM are off-the-shelf. Risk: tool latency stacks onto
+brain latency — mitigated because injection etiquette already tolerates seconds and Moshi backfills.
+
+**Tier C proposal, ranked by adoption leverage:**
+
+1. **OpenAI Realtime API-compatible WebSocket shim** (`web-demo/realtime_shim.py`). Makes the README's
+   "drop-in" claim literal: any existing Realtime client points at Duet by changing a URL. Every major
+   framework already ships a Realtime client, so this is one adapter that unlocks all of them.
+   Honest wrinkle worth documenting publicly: Realtime's event model (`response.create` / `response.done`)
+   **assumes turns**, so a genuinely full-duplex backend has to synthesize turn events from its
+   turn-taking detector — even the modern protocols encode the assumption Duet removes.
+2. **LiveKit Agents plugin** (Apache-2.0, 11.6k★, actively maintained). Native distribution into the
+   biggest realtime-agent ecosystem, and SIP telephony arrives free — which is exactly the outbound-sales
+   thesis. Phase 4 already picked LiveKit OSS for transport; the plugin is the ecosystem-native form.
+3. **Pipecat service wrapper** (BSD-2, 13.8k★). The other large framework; a `DuetService` is a fast
+   follow once (1) exists.
+4. **Duet-Bench as an MCP server** (differentiated, lower priority): expose the turn-taking harness so
+   any team can measure *their own* stack's takeover rate/handoff latency. The harness may prove more
+   adoptable than our model layer.
+
+**❌ Fish Audio (fishaudio/fish-speech, 31.8k★) — rejected as a dependency.** License verified
+2026-07-07: **"FISH AUDIO RESEARCH LICENSE AGREEMENT"** — free for research/non-commercial only;
+**any commercial use requires a separate license from Fish Audio**. Duet is Apache-2.0 and pitched
+explicitly at companies adopting it; a non-commercial core dependency destroys that story. Same class
+of finding as MinIO-archived (0002) and Piper-GPL (0002). *(Note: `fish-audio-python` is Apache-2.0
+but it's only a client for their paid hosted API — not self-hostable, so it fails the OSS-first rule.)*
+
+**Also architecturally weaker than it looks:** fish-speech is a TTS — generation-only, like CSM (0003).
+It cannot replace the duplex core. Driving an external TTS from Moshi's inner-monologue text stream is
+possible, but the text stream carries *words only* — you'd discard the prosody, backchannels and
+hesitations that live in Moshi's audio stream, re-add TTS time-to-first-byte, and reintroduce
+barge-in-kill. That trade (better timbre, worse timing) is precisely the frontier tension in blog §7,
+and it converts Duet into a smarter Unmute rather than a full-duplex system.
+
+**Narrow exceptions where Fish Audio would be legitimate:** (a) a *stronger baseline voice* in the eval
+(research use, clearly labeled, never linked into shipped code); (b) a user-supplied "voice tier" that
+adopters wire up under their own commercial license.
+
+**Cheaper fix for the actual voice complaint:** our timbre is partly a *laptop* constraint — q4 was
+chosen because q8 misses the 80 ms budget on an M5 (0008). On the Phase 4 deployment GPU (L4-class,
+already budgeted at ~$0.40/hr) **bf16 weights fit the budget comfortably** and sound better than q4 or
+q8. Recommend measuring this on the first GPU deploy before considering any TTS-swap architecture.
+
+**Recommendation:** do (1) Realtime shim → (2) LiveKit Agents plugin → Tier-B MCP tools, alongside
+Phase 4. Skip Fish Audio. All of the above is $0 additional spend.
+---
+
 ## Running spend
 
 | Date | Item | Cost | Total |
