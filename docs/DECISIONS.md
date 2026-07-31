@@ -332,6 +332,42 @@ telephony), reading list, and measurable definitions of "world-class". Next conc
 there: takeover rate 0.24 → <0.10 while holding handoff p50 <300 ms.
 ---
 
+## 0012 — 2026-07-07 — ASR eval: two of our own claims, disproved
+
+Built `eval/asr/run_asr_eval.py` — WER + real-time-factor over the 30 benchmark utterances
+(Piper-synthesized, scenario text as ground truth). Turning "the transcription isn't accurate"
+into a number immediately falsified two things this journal previously asserted.
+
+| config | WER | RTF |
+|---|---|---|
+| small.en, **fed 24 kHz as 16 kHz (the 0009 bug, reproduced as a control)** | **2.3%** | 0.31x |
+| tiny.en | 5.3% | 0.04x |
+| **base.en** | **2.3%** | **0.09x** |
+| small.en | 2.7% | 0.33x |
+| distil-large-v3 | 3.4% | 1.64x (slower than real time on CPU — unusable live) |
+
+**Correction 1 — the sample-rate bug was not the cause of bad transcripts.** 0009 called it "the
+root cause"; on this data it costs **nothing** (2.3% either way). Whisper is evidently robust to a
+1.5x slowdown on clean speech. The fix is still correct (feeding a model the rate it expects is not
+optional, and the penalty on noisy/accented speech is likely real) — but the *claim* was unearned
+and is withdrawn.
+
+**Correction 2 — the base.en → small.en "upgrade" was unjustified.** small.en measured *worse*
+(2.7% vs 2.3%) at 3.7x the compute. Default reverted to `base.en`; `ASR_MODEL` still overrides.
+Bigger was not better twice over: distil-large-v3 was worst of the three usable models.
+
+**The finding that matters most: this eval is not on-distribution.** If ASR sits at ~2.3% on clean
+speech regardless of model, then the user's live experience of inaccurate transcription is *not*
+explained by model choice — so the cause is elsewhere in the live path (mic quality, VAD
+segmentation chopping utterances, self-hearing, buffering). The eval's real value here was telling
+us **where not to look**. The worst remaining case is even a TTS artifact ("Ah shame" synthesized as
+"Aahshane"), i.e. the harness's own voice, not the recognizer.
+
+**Next, and it needs the user:** capture real microphone audio + corrected transcripts from a live
+web-demo session to build an on-distribution ASR eval set. Synthetic speech cannot settle
+base.en vs small.en for a real room; recorded speech can.
+---
+
 ## Running spend
 
 | Date | Item | Cost | Total |

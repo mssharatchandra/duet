@@ -149,7 +149,7 @@ class Session:
     def _brain_loop(self) -> None:
         try:
             from faster_whisper import WhisperModel
-            asr = WhisperModel(os.environ.get("ASR_MODEL", "small.en"), device="cpu", compute_type="int8")
+            asr = WhisperModel(os.environ.get("ASR_MODEL", "base.en"), device="cpu", compute_type="int8")
         except Exception as e:
             self.emit(type="status", text=f"ASR unavailable ({e}) — transcript disabled, Moshi still works")
             asr = None
