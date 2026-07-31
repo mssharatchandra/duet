@@ -309,6 +309,29 @@ q8. Recommend measuring this on the first GPU deploy before considering any TTS-
 Phase 4. Skip Fish Audio. All of the above is $0 additional spend.
 ---
 
+## 0011 — 2026-07-07 — Goal reframe: learning-first, and what that changes
+
+**User reframed the objective:** company adoption (Bolna/Giga) is no longer the driver — the goal is
+personal mastery of voice AI. Recorded because it invalidates part of 0010's reasoning.
+
+**What changes:** the Fish Audio rejection in 0010 was *entirely* about its commercial restriction.
+The Fish Audio Research License permits research/non-commercial use freely, so for learning it is
+fully usable. Standing advice anyway: prefer MIT/Apache at equal quality (Chatterbox, 25.8k★, MIT,
+sub-200 ms) so a learning project never needs a rewrite to become something real.
+
+**What does NOT change:** fish-speech is still a TTS, not a duplex model — it cannot replace the core
+(0003, 0010). And 0010's latency-class rule (nothing external in the 80 ms mouth; MCP belongs in the
+async brain) is architecture, not licensing, so it stands regardless of goal.
+
+**Also unchanged:** Apache-2.0 for this repo, the honest benchmark, and the no-unmeasured-claims rule.
+Those serve a learner at least as well as they served an adopter.
+
+**New artifact:** `docs/BUILD_WORLDCLASS.md` — learner roadmap: verified 2026 open stack, six
+projects (voice tier → semantic turn detection → cloning → speech-native LLM → train a small head →
+telephony), reading list, and measurable definitions of "world-class". Next concrete target named
+there: takeover rate 0.24 → <0.10 while holding handoff p50 <300 ms.
+---
+
 ## Running spend
 
 | Date | Item | Cost | Total |

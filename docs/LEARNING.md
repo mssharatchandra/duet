@@ -2,7 +2,10 @@
 
 **Start here if you're new: [Voice AI: the 80% you need, for 20% of the effort](blog/voice-ai-the-80-20.md)** —
 the whole project's learnings as one readable post, every claim backed by a measurement in this repo.
-The lessons below then go deeper, keyed to the actual code.
+The lessons below then go deeper, keyed to the actual code. When you're ready to build beyond
+this repo: **[Building a world-class voice agent from open source](BUILD_WORLDCLASS.md)** — the
+verified 2026 open stack, six projects that each teach one hard thing, and the ~6 papers that
+get you to real fluency.
 
 This project doubles as a noob→expert course in real-time speech AI. Each phase of the build
 unlocks a lesson; each lesson is written *after* building, so it explains real code in this repo,
