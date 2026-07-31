@@ -368,6 +368,49 @@ web-demo session to build an on-distribution ASR eval set. Synthetic speech cann
 base.en vs small.en for a real room; recorded speech can.
 ---
 
+## 0013 — 2026-08-01 — The augmented ASR eval discriminates — and reverses 0012
+
+0012 ended with an open question: our ASR eval was too flat (every model ~2.3% WER on clean
+synthetic speech) to choose between candidates. A subagent built `eval/asr/augment.py` (seeded
+noise / reverb / speed / gain degradations) and an `--augment` matrix mode. The question is
+answered: **degrading the audio does separate the candidates, decisively.**
+
+| model | clean | snr20 | snr10 | snr5 | reverb | fast | slow | max RTF |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| base.en (0012's default) | 4.2% | 5.7% | 7.6% | **14.1%** | 4.2% | 4.9% | 4.2% | 0.30x |
+| small.en | 3.0% | 3.0% | 4.9% | 8.7% | 2.7% | 3.0% | 3.0% | **1.42x** |
+| mlx-whisper-large-v3-turbo | 2.3% | 1.5% | 1.9% | 3.4% | 2.7% | 1.9% | 2.7% | 0.87x |
+| **parakeet-tdt-0.6b-v3** | **1.9%** | **1.5%** | 2.7% | **2.7%** | **1.9%** | **1.9%** | **1.5%** | **0.08x** |
+
+**Correction of a correction.** 0012 reverted the default to `base.en` because small.en showed no
+benefit on clean speech at 3.7x the compute. Under noise that is flatly wrong — base.en collapses
+to 14.1% WER at SNR5 while small.en holds 8.7%, and small.en wins in *every* condition. Default
+moved to **small.en**.
+
+**The lesson, which is the valuable part:** I chose a default from an eval that could not
+discriminate, and reported it as a measured decision. An eval that cannot separate candidates is
+not evidence for a choice — it is the *absence* of evidence. "No measurable difference, so take the
+cheaper one" was a defensible cost argument dressed up as a quality finding. Dianne Penn's question
+— *is the eval on distribution?* — was the right one, and clean TTS speech was not.
+
+**Why not parakeet as the default, despite winning outright:** two unresolved risks. (1)
+`parakeet-mlx`'s public `transcribe()` shells out to `ffmpeg`, absent on this machine (no Homebrew);
+the agent bypassed it via the model's own `get_logmel()`/`generate()`, so we depend on a private
+path rather than the supported API. (2) Its RTF was measured with **Moshi not running** — parakeet
+executes on MLX/Metal, the same GPU as the duplex core, so its 0.08x headroom is untested under
+exactly the contention that has bitten this project twice (0008, and again during the user's live
+demo where an eval at ~300% CPU pushed model step p95 to 402 ms against an 80 ms budget). Marked as
+the likely upgrade pending a with-Moshi contention test.
+
+**Bonus finding against my own code:** Piper synthesis is **not** deterministic across process runs,
+contradicting the "deterministic" claim in `run_asr_eval.py`'s original header. Cross-run WER
+comparisons were therefore never strictly apples-to-apples; the agent's single-process combined run
+(all models on byte-identical audio) is the trustworthy one, and is what the table above reports.
+
+**Still open:** the real-microphone eval. Session capture now works end to end (0014 below) and the
+first real utterance is recorded, but one utterance is not a benchmark.
+---
+
 ## Running spend
 
 | Date | Item | Cost | Total |

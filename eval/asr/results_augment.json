@@ -1,24 +1,276 @@
 [
   {
-    "model": "mlx:mlx-community/whisper-large-v3-turbo",
-    "load_s": 2.3598092500469647,
+    "model": "base.en",
+    "load_s": 0.44055900000967085,
     "conditions": {
       "clean": {
-        "wer": 0.0,
-        "rtf": 0.28849729860440637,
+        "wer": 0.04182509505703422,
+        "rtf": 0.261951281852685,
         "worst": [
-          0.0,
-          "That sounds way too expensive for a small shop like ours.",
-          "That sounds way too expensive for a small shop like ours."
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "H.M. 14 days free you said."
+        ]
+      },
+      "snr20": {
+        "wer": 0.057034220532319393,
+        "rtf": 0.2623016598215701,
+        "worst": [
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "H.M. 14 days free, you said."
         ]
       },
       "snr10": {
-        "wer": 0.0,
-        "rtf": 0.2978562514340792,
+        "wer": 0.07604562737642585,
+        "rtf": 0.23712623389866874,
         "worst": [
-          0.0,
-          "That sounds way too expensive for a small shop like ours.",
-          "That sounds way too expensive for a small shop like ours."
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "H.M. 14 days free, you said."
+        ]
+      },
+      "snr5": {
+        "wer": 0.14068441064638784,
+        "rtf": 0.29912882028636695,
+        "worst": [
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "It's him, 14 days free, you said."
+        ]
+      },
+      "reverb": {
+        "wer": 0.04182509505703422,
+        "rtf": 0.21674424349175603,
+        "worst": [
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "H.M. 14 days free, you said."
+        ]
+      },
+      "fast": {
+        "wer": 0.049429657794676805,
+        "rtf": 0.2673817190303904,
+        "worst": [
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "H.M. 14 days free, you said."
+        ]
+      },
+      "slow": {
+        "wer": 0.04182509505703422,
+        "rtf": 0.22322241846666607,
+        "worst": [
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "H.M. 14 days free you said."
+        ]
+      }
+    }
+  },
+  {
+    "model": "small.en",
+    "load_s": 0.9956900829565711,
+    "conditions": {
+      "clean": {
+        "wer": 0.030418250950570342,
+        "rtf": 0.8132910228317927,
+        "worst": [
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "A CHAM 14 days free, you said."
+        ]
+      },
+      "snr20": {
+        "wer": 0.030418250950570342,
+        "rtf": 0.8251575641413031,
+        "worst": [
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "H.M. 14 days free, you said."
+        ]
+      },
+      "snr10": {
+        "wer": 0.049429657794676805,
+        "rtf": 0.8497426795851201,
+        "worst": [
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "H.M. 14 days free, you said."
+        ]
+      },
+      "snr5": {
+        "wer": 0.08745247148288973,
+        "rtf": 0.9665430659900255,
+        "worst": [
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "H.M. 14 days free, you said."
+        ]
+      },
+      "reverb": {
+        "wer": 0.026615969581749048,
+        "rtf": 1.3417349400526646,
+        "worst": [
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "H.M. 14 days free, you said."
+        ]
+      },
+      "fast": {
+        "wer": 0.030418250950570342,
+        "rtf": 1.421280561260502,
+        "worst": [
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "H.M. 14 days free, you said."
+        ]
+      },
+      "slow": {
+        "wer": 0.030418250950570342,
+        "rtf": 0.8807020826874511,
+        "worst": [
+          0.5,
+          "Hm. Fourteen days free, you said?",
+          "H.M. 14 days free, you said."
+        ]
+      }
+    }
+  },
+  {
+    "model": "mlx:mlx-community/whisper-large-v3-turbo",
+    "load_s": 9.276793457975145,
+    "conditions": {
+      "clean": {
+        "wer": 0.022813688212927757,
+        "rtf": 0.8655106738159457,
+        "worst": [
+          0.2,
+          "We looked at MarketMan last year and hated the setup.",
+          "We looked at Market Man last year and hated the setup."
+        ]
+      },
+      "snr20": {
+        "wer": 0.015209125475285171,
+        "rtf": 0.7227737273239353,
+        "worst": [
+          0.2,
+          "We looked at MarketMan last year and hated the setup.",
+          "We looked at Market Man last year and hated the setup."
+        ]
+      },
+      "snr10": {
+        "wer": 0.019011406844106463,
+        "rtf": 0.7332311642563718,
+        "worst": [
+          0.2,
+          "We looked at MarketMan last year and hated the setup.",
+          "We looked at Market Man last year and hated the setup."
+        ]
+      },
+      "snr5": {
+        "wer": 0.034220532319391636,
+        "rtf": 0.6799163607969178,
+        "worst": [
+          0.2857142857142857,
+          "Got it, inventory only. That's still useful.",
+          "product, inventory only, that's still useful."
+        ]
+      },
+      "reverb": {
+        "wer": 0.026615969581749048,
+        "rtf": 0.7306478619912157,
+        "worst": [
+          0.2,
+          "We looked at MarketMan last year and hated the setup.",
+          "We looked at Market Man last year and hated the setup."
+        ]
+      },
+      "fast": {
+        "wer": 0.019011406844106463,
+        "rtf": 0.828404754283723,
+        "worst": [
+          0.2,
+          "We looked at MarketMan last year and hated the setup.",
+          "We looked at Market Man last year and hated the setup."
+        ]
+      },
+      "slow": {
+        "wer": 0.026615969581749048,
+        "rtf": 0.7750442515161929,
+        "worst": [
+          0.2,
+          "We looked at MarketMan last year and hated the setup.",
+          "We looked at Market Man last year and hated the setup."
+        ]
+      }
+    }
+  },
+  {
+    "model": "parakeet:mlx-community/parakeet-tdt-0.6b-v3",
+    "load_s": 1.874426374968607,
+    "conditions": {
+      "clean": {
+        "wer": 0.019011406844106463,
+        "rtf": 0.08184820127870948,
+        "worst": [
+          0.2,
+          "We looked at MarketMan last year and hated the setup.",
+          "We looked at Market Man last year and hated the setup."
+        ]
+      },
+      "snr20": {
+        "wer": 0.015209125475285171,
+        "rtf": 0.07448319273094142,
+        "worst": [
+          0.2,
+          "We looked at MarketMan last year and hated the setup.",
+          "We looked at Market Man last year and hated the setup."
+        ]
+      },
+      "snr10": {
+        "wer": 0.026615969581749048,
+        "rtf": 0.07600278583170056,
+        "worst": [
+          0.2,
+          "We looked at MarketMan last year and hated the setup.",
+          "We looked at Market Man last year and hated the setup."
+        ]
+      },
+      "snr5": {
+        "wer": 0.026615969581749048,
+        "rtf": 0.07540371370823246,
+        "worst": [
+          0.2,
+          "We looked at MarketMan last year and hated the setup.",
+          "We looked at Market Man last year and hated the setup."
+        ]
+      },
+      "reverb": {
+        "wer": 0.019011406844106463,
+        "rtf": 0.04076891076076712,
+        "worst": [
+          0.2,
+          "We looked at MarketMan last year and hated the setup.",
+          "We looked at Market Man last year and hated the setup."
+        ]
+      },
+      "fast": {
+        "wer": 0.019011406844106463,
+        "rtf": 0.08021141206339646,
+        "worst": [
+          0.2,
+          "We looked at MarketMan last year and hated the setup.",
+          "We looked at Market Man last year and hated the setup."
+        ]
+      },
+      "slow": {
+        "wer": 0.015209125475285171,
+        "rtf": 0.07513603927382088,
+        "worst": [
+          0.2,
+          "We looked at MarketMan last year and hated the setup.",
+          "We looked at Market Man last year and hated the setup."
         ]
       }
     }

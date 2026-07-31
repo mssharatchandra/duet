@@ -2,18 +2,27 @@
 # Duet — ASR eval: turn "the transcription isn't accurate" into a number.
 #
 # Method: our benchmark scenarios have ground-truth text. Synthesize each
-# utterance with Piper (deterministic), run every candidate ASR config over it,
-# and report WER. Also measures real-time factor (RTF) — an ASR that is 3%
-# better but 4x slower is not automatically the right pick for a live agent.
+# utterance with Piper, run every candidate ASR config over the SAME synthesized
+# clips (built once per process, reused for every model/condition — so within one
+# run every candidate hears byte-identical audio), and report WER. Also measures
+# real-time factor (RTF) — an ASR that is 3% better but 4x slower is not
+# automatically the right pick for a live agent.
 #
-# HONEST LIMITATION, stated up front: TTS speech is clean, unaccented and
-# noiseless, so plain WERs are a LOWER BOUND and a *relative* ranking — not
-# absolute accuracy on real users. --augment (see below) closes part of that
-# gap by degrading the clean synthetic audio toward a real-room proxy; it is
-# still not recorded speech, so treat it as a better relative ranking, not an
-# absolute number either. The genuinely on-distribution version of this eval
-# needs recordings of the actual user in their actual room; this harness
-# accepts those via --audio-dir once they exist.
+# HONEST LIMITATIONS, stated up front:
+# - TTS speech is clean, unaccented and noiseless, so plain WERs are a LOWER
+#   BOUND and a *relative* ranking — not absolute accuracy on real users.
+#   --augment (see below) closes part of that gap by degrading the clean
+#   synthetic audio toward a real-room proxy; it is still not recorded speech,
+#   so treat it as a better relative ranking, not an absolute number either.
+#   The genuinely on-distribution version of this eval needs recordings of the
+#   actual user in their actual room; this harness accepts those via
+#   --audio-dir once they exist.
+# - Piper is NOT fully deterministic across separate process runs, despite
+#   earlier versions of this comment claiming otherwise: it's a VITS-style
+#   model whose decoder samples a noise latent inside the ONNX graph on every
+#   call, unseeded. Same-run comparisons (the normal case here) are unaffected
+#   since `clips` is built once and reused; only cross-run WER comparisons for
+#   "the same" condition/model can drift by a few points. See eval/asr/README.md.
 #
 # --augment mode (DECISIONS 0012 follow-up): the plain eval put every
 # faster-whisper candidate within a point of each other (~2.3% WER) — too flat
@@ -190,6 +199,10 @@ class ParakeetMlxEngine:
 
         t0 = time.perf_counter()
         self._model = from_pretrained(self.repo)
+        # Warm up MLX's lazy graph compilation with a throwaway clip so per-clip
+        # transcribe() timings measure steady-state inference, not first-call JIT
+        # cost (observed ~4x slower on the very first real call otherwise).
+        self.transcribe(np.zeros(24_000, dtype=np.float32))
         return time.perf_counter() - t0
 
     def transcribe(self, pcm24k: np.ndarray) -> tuple[str, float]:

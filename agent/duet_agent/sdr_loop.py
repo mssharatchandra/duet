@@ -210,7 +210,7 @@ def brain_process(pcm_tap, inject_q, args):
     load_repo_env()
     from faster_whisper import WhisperModel  # optional dep: uv pip install -e '.[live]'
 
-    asr = WhisperModel(os.environ.get("ASR_MODEL", "base.en"), device="cpu", compute_type="int8")
+    asr = WhisperModel(os.environ.get("ASR_MODEL", "small.en"), device="cpu", compute_type="int8")
     brain = ReasoningLayer()
     history: list[tuple[str, str]] = []
     buf: list[np.ndarray] = []
