@@ -1,7 +1,6 @@
-# Minimal Prometheus config. App metrics (/metrics on the Duet server) join in
-# Phase 4 when a long-running process exists to scrape; benchmark-run metrics
-# go to Postgres instead (short-lived processes and pull-based scraping don't
-# mix — see DECISIONS.md 0007).
+# Prometheus scrapes the local browser server through Docker's host gateway.
+# Short-lived benchmark summaries still go to Postgres because pull-based
+# scraping cannot reliably observe a process that exits between intervals.
 global:
   scrape_interval: 15s
 scrape_configs:
@@ -11,3 +10,7 @@ scrape_configs:
   - job_name: grafana
     static_configs:
       - targets: ["grafana:3000"]
+  - job_name: duet-live
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8990"]

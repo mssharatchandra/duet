@@ -1,0 +1,20 @@
+local.file_match "duet_live" {
+  path_targets = [
+    {
+      __path__ = "/var/log/duet/*.jsonl",
+      job      = "duet-live",
+    },
+  ]
+  sync_period = "5s"
+}
+
+loki.source.file "duet_live" {
+  targets    = local.file_match.duet_live.targets
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

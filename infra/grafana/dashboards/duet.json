@@ -64,6 +64,55 @@
       "gridPos": { "x": 12, "y": 15, "w": 12, "h": 5 },
       "datasource": { "type": "postgres", "uid": "duet-pg" },
       "targets": [{ "refId": "A", "format": "table", "rawSql": "SELECT count(*) FROM calls;" }]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Live sessions",
+      "gridPos": { "x": 0, "y": 20, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "duet-prom" },
+      "targets": [{ "refId": "A", "expr": "sum(duet_sessions_active)", "legendFormat": "active" }]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Live response latency p50 / p95",
+      "gridPos": { "x": 6, "y": 20, "w": 18, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "duet-prom" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(duet_response_latency_ms_bucket[5m])))", "legendFormat": "p50" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(duet_response_latency_ms_bucket[5m])))", "legendFormat": "p95" }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Reasoning and TTS latency p95",
+      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "duet-prom" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(duet_reasoning_latency_ms_bucket[5m])))", "legendFormat": "reasoning" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(duet_tts_first_audio_latency_ms_bucket[5m])))", "legendFormat": "tts first audio" }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Errors and interruptions",
+      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "duet-prom" },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(duet_errors_total[5m]))", "legendFormat": "errors/s" },
+        { "refId": "B", "expr": "sum(rate(duet_interruptions_total[5m]))", "legendFormat": "interruptions/s" }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "logs",
+      "title": "Correlated live-session events (content redacted by default)",
+      "gridPos": { "x": 0, "y": 36, "w": 24, "h": 10 },
+      "datasource": { "type": "loki", "uid": "duet-loki" },
+      "targets": [{ "refId": "A", "expr": "{job=\"duet-live\"}", "queryType": "range" }]
     }
   ]
 }

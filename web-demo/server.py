@@ -52,6 +52,7 @@ from duet_agent.hermes import (  # noqa: E402
     record_review,
 )
 from duet_agent.injector import TextInjector  # noqa: E402
+from duet_agent.live_telemetry import LiveSessionTelemetry, METRICS  # noqa: E402
 from duet_agent import persona  # noqa: E402
 from duet_agent.reasoning import Guidance, ReasoningFailure, ReasoningLayer, SpeechPreview  # noqa: E402
 from duet_agent.turns import TurnAssembler  # noqa: E402
@@ -112,6 +113,17 @@ class Session:
         # eval/asr/sessions/<session_id>/ directory name once capture is turned on.
         self.session_id = f"{int(time.time())}-{os.urandom(3).hex()}"
         self.action_layer = ActionLayer(self.session_id)
+        self.brain = None
+        self.telemetry = LiveSessionTelemetry(
+            self.session_id,
+            args.mode,
+            {
+                "voice_stack": args.voice_stack,
+                "asr": args.asr,
+                "tts": args.tts_backend,
+                "barge_in": args.barge_in,
+            },
+        )
         self.capture: SessionCapture | None = None
         if getattr(args, "capture", False):
             self.enable_capture()
@@ -124,6 +136,9 @@ class Session:
                 self.tutor_error = str(e)
 
     def emit(self, **ev) -> None:
+        telemetry = getattr(self, "telemetry", None)
+        if telemetry is not None:
+            telemetry.event(ev)
         self.events.put(ev)
 
     def enable_capture(self) -> None:
@@ -141,9 +156,14 @@ class Session:
         threading.Thread(target=self._model_loop, daemon=True).start()
         threading.Thread(target=self._brain_loop, daemon=True).start()
 
-    def stop(self) -> None:
+    def stop(self, reason: str = "client_disconnect") -> None:
+        if not self.running:
+            return
         self.running = False
         self.cancel_speech.set()
+        telemetry = getattr(self, "telemetry", None)
+        if telemetry is not None:
+            telemetry.finish(reason, getattr(self, "brain", None))
 
     @staticmethod
     def _clear_queue(q: queue.Queue) -> None:
@@ -478,6 +498,7 @@ class Session:
 
     def _brain_loop(self) -> None:
         brain = self._make_brain()
+        self.brain = brain
         if self.args.asr == "sarvam":
             completed = asyncio.run(self._sarvam_brain_loop(brain))
             if completed or not self.running:
@@ -489,13 +510,19 @@ class Session:
     def _make_brain(self):
         try:
             if self.tutor is not None and self.args.hermes_remote_grading:
-                return ReasoningLayer(
+                brain = ReasoningLayer(
                     system_prompt=self.tutor.system_prompt(),
                     prompt_builder=self.tutor.grading_prompt,
                     response_parser=parse_tutor_guidance,
                 )
-            if self.args.mode == "sdr":
-                return ReasoningLayer()
+            elif self.args.mode == "sdr":
+                brain = ReasoningLayer()
+            else:
+                return None
+            telemetry = getattr(self, "telemetry", None)
+            if telemetry is not None:
+                telemetry.attach_brain(brain)
+            return brain
         except RuntimeError as e:
             self.emit(type="status", text=f"brain disabled: {e}")
         return None
@@ -566,6 +593,9 @@ class Session:
         if not accepted:
             self.emit(type="status", text="ASR output rejected: no meaningful words")
             return
+        telemetry = getattr(self, "telemetry", None)
+        if telemetry is not None:
+            telemetry.mark_user_turn(float(latency_ms))
         self.emit(type="you", text=text, raw_text=raw_text if raw_text != text else "")
         if self.capture is not None and cap_record is not None:
             self._attach_capture(cap_record, raw_text)
@@ -1302,6 +1332,20 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                 await asyncio.sleep(0.01)
 
     pump_task = asyncio.create_task(pump())
+
+    async def enforce_session_cap() -> None:
+        await asyncio.sleep(session.args.session_max_seconds)
+        if not session.running:
+            return
+        message = "That's the demo limit — thanks for trying Aira. We'll be in touch."
+        session.emit(type="policy", state="session_limit", text="Server-side session duration cap reached")
+        session.speak(message)
+        # Give the short closing line time to leave the server before disconnect.
+        await asyncio.sleep(4)
+        session.stop("session_limit")
+        await ws.close(code=1000, message=b"session limit")
+
+    cap_task = asyncio.create_task(enforce_session_cap())
     try:
         async for msg in ws:
             if msg.type == WSMsgType.BINARY and len(msg.data) == FRAME * 4:
@@ -1337,8 +1381,9 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
             elif msg.type == WSMsgType.ERROR:
                 break
     finally:
-        session.stop()
+        session.stop("client_disconnect")
         pump_task.cancel()
+        cap_task.cancel()
         active["session"] = None
     return ws
 
@@ -1406,6 +1451,22 @@ async def health_handler(request: web.Request) -> web.Response:
     )
 
 
+async def readiness_handler(request: web.Request) -> web.Response:
+    """Configuration readiness; provider reachability is measured by live error metrics."""
+    args = request.app["args"]
+    missing: list[str] = []
+    if args.mode == "sdr" and not os.environ.get("GEMINI_API_KEY"):
+        missing.append("GEMINI_API_KEY")
+    if (args.asr == "sarvam" or args.tts_backend.startswith("sarvam")) and not os.environ.get("SARVAM_API_KEY"):
+        missing.append("SARVAM_API_KEY")
+    ready = not missing
+    return web.json_response({"ready": ready, "missing": missing}, status=200 if ready else 503)
+
+
+async def metrics_handler(request: web.Request) -> web.Response:
+    return web.Response(text=METRICS.render(), content_type="text/plain")
+
+
 def main() -> None:
     load_repo_env()
     ap = argparse.ArgumentParser()
@@ -1416,6 +1477,12 @@ def main() -> None:
     ap.add_argument("--steps", type=int, default=4000)
     ap.add_argument("--temp", type=float, default=0.8, help="audio sampling temperature (0.6 = cleaner/flatter)")
     ap.add_argument("--port", type=int, default=8990)
+    ap.add_argument(
+        "--session-max-seconds",
+        type=int,
+        default=int(os.environ.get("SESSION_MAX_SECONDS", "240")),
+        help="hard server-side session cap; protects provider spend even if the browser is modified",
+    )
     ap.add_argument("--voice-stack", choices=["open", "moshi", "none"], default="open",
                     help="open is the reliable local VAD/ASR/TTS cascade; moshi keeps the experimental "
                          "full-duplex model; none runs transcript/capture only")
@@ -1484,6 +1551,8 @@ def main() -> None:
     app.router.add_post("/corrections", corrections_handler)
     app.router.add_post("/hermes/review", hermes_review_handler)
     app.router.add_get("/healthz", health_handler)
+    app.router.add_get("/readyz", readiness_handler)
+    app.router.add_get("/metrics", metrics_handler)
     app.router.add_get("/", lambda r: web.FileResponse(STATIC / "index.html"))
     app.router.add_static("/static", STATIC)
     if args.voice_stack == "open":

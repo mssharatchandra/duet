@@ -8,8 +8,10 @@
 #      pinned SDK isn't worth a dependency for two event types.
 
 import base64
+import hashlib
 import json
 import os
+import queue
 import threading
 import time
 import urllib.request
@@ -60,6 +62,54 @@ def cost_fields(gpu_seconds: float, reasoning_usd: float, duration_s: float) -> 
     }
 
 
+class _LangfuseExporter:
+    """One bounded ingestion worker shared by every session using a backend."""
+
+    def __init__(self, host: str, auth: str):
+        self.host = host
+        self.auth = auth
+        self.queue: queue.Queue[list] = queue.Queue(maxsize=2048)
+        threading.Thread(target=self._worker, name="duet-langfuse", daemon=True).start()
+
+    def enqueue(self, batch: list) -> bool:
+        try:
+            self.queue.put_nowait(batch)
+            return True
+        except queue.Full:
+            return False
+
+    def _worker(self) -> None:
+        while True:
+            batch = self.queue.get()
+            # Amortize ingestion overhead when several call events arrive together.
+            while len(batch) < 100:
+                try:
+                    batch.extend(self.queue.get_nowait())
+                except queue.Empty:
+                    break
+            try:
+                req = urllib.request.Request(
+                    f"{self.host}/api/public/ingestion",
+                    data=json.dumps({"batch": batch}).encode(),
+                    headers={"Content-Type": "application/json", "Authorization": self.auth},
+                )
+                urllib.request.urlopen(req, timeout=10).read()
+            except Exception:  # noqa: BLE001, S110 -- observability must never break the call
+                pass
+
+
+_EXPORTERS: dict[tuple[str, str], _LangfuseExporter] = {}
+_EXPORTERS_LOCK = threading.Lock()
+
+
+def _exporter(host: str, auth: str) -> _LangfuseExporter:
+    key = (host, auth)
+    with _EXPORTERS_LOCK:
+        if key not in _EXPORTERS:
+            _EXPORTERS[key] = _LangfuseExporter(host, auth)
+        return _EXPORTERS[key]
+
+
 class LangfuseTracer:
     def __init__(self, host: str | None = None, public_key: str | None = None, secret_key: str | None = None):
         self.host = (host or os.environ.get("LANGFUSE_HOST", "")).rstrip("/")
@@ -67,6 +117,9 @@ class LangfuseTracer:
         sk = secret_key or os.environ.get("LANGFUSE_SECRET_KEY", "")
         self.enabled = bool(self.host and pk and sk)
         self._auth = "Basic " + base64.b64encode(f"{pk}:{sk}".encode()).decode() if self.enabled else ""
+        self.capture_content = os.environ.get("DUET_TRACE_CONTENT", "false").lower() in {"1", "true", "yes"}
+        self._exporter = _exporter(self.host, self._auth) if self.enabled else None
+        self.dropped_batches = 0
 
     def trace(self, name: str, metadata: dict | None = None) -> str:
         trace_id = str(uuid.uuid4())
@@ -82,28 +135,40 @@ class LangfuseTracer:
             [{"id": str(uuid.uuid4()), "type": "generation-create", "timestamp": _iso(),
               "body": {
                   "id": str(uuid.uuid4()), "traceId": trace_id, "name": name, "model": model,
-                  "input": input_text, "output": output_text,
+                  "input": self._content(input_text), "output": self._content(output_text),
                   "usage": {"input": tokens_in, "output": tokens_out},
                   "startTime": _iso(start_ts), "endTime": _iso(end_ts),
                   "level": "ERROR" if error else "DEFAULT",
               }}]
         )
 
+    def span(self, trace_id: str, name: str, start_ts: float, end_ts: float,
+             metadata: dict | None = None, error: bool = False) -> None:
+        """Add one correlated pipeline span without blocking the audio path."""
+        self._send_async(
+            [{"id": str(uuid.uuid4()), "type": "span-create", "timestamp": _iso(),
+              "body": {
+                  "id": str(uuid.uuid4()), "traceId": trace_id, "name": name,
+                  "startTime": _iso(start_ts), "endTime": _iso(end_ts),
+                  "metadata": metadata or {}, "level": "ERROR" if error else "DEFAULT",
+              }}]
+        )
+
+    def _content(self, text: str):
+        if self.capture_content:
+            return text
+        encoded = text.encode("utf-8", errors="replace")
+        return {
+            "redacted": True,
+            "characters": len(text),
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+        }
+
     def _send_async(self, batch: list) -> None:
         if not self.enabled:
             return
-        threading.Thread(target=self._send, args=(batch,), daemon=True).start()
-
-    def _send(self, batch: list) -> None:
-        try:
-            req = urllib.request.Request(
-                f"{self.host}/api/public/ingestion",
-                data=json.dumps({"batch": batch}).encode(),
-                headers={"Content-Type": "application/json", "Authorization": self._auth},
-            )
-            urllib.request.urlopen(req, timeout=10).read()
-        except Exception:  # noqa: BLE001, S110 -- observability must never break the call
-            pass  # rule 1
+        if self._exporter is None or not self._exporter.enqueue(batch):
+            self.dropped_batches += 1
 
 
 class CallStore:

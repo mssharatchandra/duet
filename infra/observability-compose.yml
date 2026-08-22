@@ -51,8 +51,9 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prom_data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
-  # Log aggregation — staged now, fed by the long-running server in Phase 4.
   loki:
     image: grafana/loki:3.4.2
     restart: unless-stopped
@@ -61,8 +62,26 @@ services:
     volumes:
       - loki_data:/loki
 
+  alloy:
+    image: grafana/alloy:v1.17.1
+    restart: unless-stopped
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    ports:
+      - "127.0.0.1:12345:12345"
+    volumes:
+      - ./alloy.alloy:/etc/alloy/config.alloy:ro
+      - ../.local/telemetry:/var/log/duet:ro
+      - alloy_data:/var/lib/alloy/data
+    depends_on:
+      - loki
+
 volumes:
   duet_pg:
   grafana_data:
   prom_data:
   loki_data:
+  alloy_data:

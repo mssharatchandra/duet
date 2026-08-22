@@ -9,6 +9,7 @@ cd "$(dirname "$0")/.."
 command -v docker >/dev/null || { echo "docker not found — start Docker Desktop or colima"; exit 1; }
 docker info >/dev/null 2>&1 || { echo "docker daemon not running — start Docker Desktop or 'colima start'"; exit 1; }
 [ -f infra/.env ] || cp infra/.env.example infra/.env
+mkdir -p .local/telemetry
 
 echo "▸ starting stacks…"
 (cd infra && docker compose -p langfuse -f langfuse-compose.yml up -d --quiet-pull)
@@ -45,7 +46,8 @@ Voice demos (Apple Silicon, wear headphones):
   cd agent && uv run duet-sdr --live   # the SDR agent with the Gemini brain
   cd agent && uv run duet-sdr          # no-mic scripted version of the same
 
-Web demo (browser UI, echo-cancelled): agent/.venv/bin/python web-demo/server.py → http://localhost:8990
+Web demo (browser UI, echo-cancelled): ./scripts/run-live-demo.sh → http://localhost:8990
+  Health / readiness / metrics: http://localhost:8990/healthz · /readyz · /metrics
   ⚠ voice quality tip: the model needs a quiet machine — stop the Langfuse stack first
     (cd infra && docker compose -p langfuse -f langfuse-compose.yml stop) and restart it after.
 
