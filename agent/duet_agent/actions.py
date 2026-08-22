@@ -161,16 +161,15 @@ class ActionLayer:
                 "recorded_at": time.time(),
                 "adapter": "local-demo-ledger",
             }
-            with self._lock:
-                with self.ledger_path.open("a", encoding="utf-8") as ledger:
-                    ledger.write(json.dumps(record, sort_keys=True) + "\n")
+            with self._lock, self.ledger_path.open("a", encoding="utf-8") as ledger:
+                ledger.write(json.dumps(record, sort_keys=True) + "\n")
             result = ActionResult(
                 action.name,
                 "accepted",
                 reference_id=action_id,
                 adapter="local-demo-ledger",
             )
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 -- adapter failures must become fail-closed results
             result = ActionResult(
                 action.name,
                 "failed",
@@ -209,7 +208,7 @@ class ActionLayer:
                 reference_id=str(body.get("reference_id") or action_id),
                 adapter="remote",
             )
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 -- remote transport failures are external input
             result = ActionResult(
                 name=action.name,
                 status="failed",

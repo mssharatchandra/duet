@@ -12,10 +12,9 @@ import datetime as dt
 import json
 import re
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
-
 
 REVIEWABLE_STATUSES = {"approved", "published"}
 VERDICTS = {"correct", "partial", "incorrect", "repeat", "skip"}
@@ -196,7 +195,7 @@ def load_recall_deck(root: Path | str, slug: str | None = None, today: dt.date |
     learning = root / "learning"
     if not (root / "scripts" / "brain.py").is_file() or not learning.is_dir():
         raise HermesError(f"not a hermes-brain checkout: {root}")
-    today = today or dt.datetime.now(dt.timezone.utc).date()
+    today = today or dt.datetime.now(dt.UTC).date()
 
     candidates: list[tuple[dt.date, Path, dict]] = []
     for run_dir in sorted(path for path in learning.iterdir() if path.is_dir()):
@@ -217,7 +216,7 @@ def load_recall_deck(root: Path | str, slug: str | None = None, today: dt.date |
         detail = f"approved run {slug!r} was not found" if slug else "no approved Hermes reviews are due"
         raise HermesError(detail)
 
-    due_at, run_dir, manifest = sorted(candidates, key=lambda item: (item[0], item[1].name))[0]
+    due_at, run_dir, manifest = min(candidates, key=lambda item: (item[0], item[1].name))
     artifacts = manifest.get("artifacts", {})
     recall_path = run_dir / str(artifacts.get("recall", "recall.md"))
     article_path = run_dir / str(artifacts.get("article", "article.mdx"))

@@ -9,11 +9,11 @@ from types import SimpleNamespace
 WEB_DEMO = Path(__file__).resolve().parents[2] / "web-demo"
 sys.path.insert(0, str(WEB_DEMO))
 
-from server import Session  # noqa: E402
+from server import Session
 
-from duet_agent.hermes import RecallDeck, TutorSession  # noqa: E402
-from duet_agent.actions import ActionRequest, ActionResult  # noqa: E402
-from duet_agent.reasoning import Guidance, SpeechPreview  # noqa: E402
+from duet_agent.actions import ActionRequest, ActionResult
+from duet_agent.hermes import RecallDeck, TutorSession
+from duet_agent.reasoning import Guidance, SpeechPreview
 
 
 def _session():
@@ -192,7 +192,8 @@ def test_stable_partial_reasoning_is_held_then_committed_by_matching_final():
     session.sdr_permission = "granted"
 
     class Brain:
-        calls = []
+        def __init__(self):
+            self.calls = []
 
         def request(self, history, text):
             self.calls.append((list(history), text))
@@ -220,7 +221,8 @@ def test_changed_final_replaces_speculative_reasoning():
     session.sdr_permission = "granted"
 
     class Brain:
-        calls = []
+        def __init__(self):
+            self.calls = []
 
         def request(self, history, text):
             self.calls.append((list(history), text))

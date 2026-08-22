@@ -102,7 +102,7 @@ class LangfuseTracer:
                 headers={"Content-Type": "application/json", "Authorization": self._auth},
             )
             urllib.request.urlopen(req, timeout=10).read()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 -- observability must never break the call
             pass  # rule 1
 
 
@@ -129,7 +129,7 @@ class CallStore:
                     [record[c] for c in cols],
                 )
                 return cur.rowcount > 0  # False = duplicate call_id, skipped
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- optional database may fail in many driver-specific ways
             if not self._warned:
                 self._warned = True
                 print(f"[telemetry] postgres unavailable ({type(e).__name__}) — call records go to JSONL only")

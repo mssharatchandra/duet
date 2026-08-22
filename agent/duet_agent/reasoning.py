@@ -221,8 +221,8 @@ class ReasoningLayer:
             guidance = self.response_parser(response)
             # Custom profiles use their own result dataclasses; attach public
             # request metadata when possible without coupling their schema.
-            setattr(guidance, "request_id", request_id)
-            setattr(guidance, "user_utterance", user_utterance)
+            guidance.request_id = request_id
+            guidance.user_utterance = user_utterance
             guidance.latency_ms = (time.perf_counter() - t0) * 1e3
             self.stats.tokens_in += guidance.tokens_in
             self.stats.tokens_out += guidance.tokens_out
@@ -233,7 +233,7 @@ class ReasoningLayer:
                                        output_text, guidance.tokens_in, guidance.tokens_out,
                                        t_wall - guidance.latency_ms / 1e3, t_wall)
             self.results.put(guidance)
-        except Exception as e:  # any failure degrades gracefully, never propagates
+        except Exception as e:  # noqa: BLE001 -- any provider/parser failure degrades gracefully
             self.stats.failures += 1
             failure = ReasoningFailure(
                 reason=f"{type(e).__name__}: {e}",

@@ -19,8 +19,8 @@
 
 from __future__ import annotations
 
-import importlib.util
 import base64
+import importlib.util
 import json
 import os
 import struct
@@ -270,7 +270,7 @@ class SarvamWebSocketTTS(StreamingTTS):
                     continue
                 try:
                     self._socket.ping()
-                except Exception:
+                except Exception:  # noqa: BLE001 -- any dead provider socket is discarded
                     self._disconnect()
 
     def _disconnect(self, *, abort: bool = False) -> None:
@@ -284,12 +284,12 @@ class SarvamWebSocketTTS(StreamingTTS):
             if close_socket is not None:
                 try:
                     close_socket()
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 -- best-effort abort during cancellation
                     pass
         if connection is not None:
             try:
                 connection.__exit__(None, None, None)
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 -- teardown cannot mask the original failure
                 pass
 
     def close(self) -> None:

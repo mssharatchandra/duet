@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "web-demo"))
 
-from capture import FRAME_SIZE, SessionCapture, UtteranceSegmenter  # noqa: E402
+from capture import FRAME_SIZE, SessionCapture, UtteranceSegmenter
 
 LOUD = np.full(FRAME_SIZE, 0.1, dtype=np.float32)   # rms 0.1 > any adaptive threshold in these tests
 QUIET = np.zeros(FRAME_SIZE, dtype=np.float32)       # rms 0.0 < threshold

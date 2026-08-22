@@ -27,8 +27,8 @@
 
 import time
 from collections import deque
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable
 
 
 class State(Enum):

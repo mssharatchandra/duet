@@ -31,11 +31,11 @@ import time
 
 import huggingface_hub
 import mlx.core as mx
-import mlx.nn as nn
 import numpy as np
 import rustymimi
 import sentencepiece
 import sounddevice as sd
+from mlx import nn
 from moshi_mlx import models, utils
 
 SAMPLE_RATE = 24_000

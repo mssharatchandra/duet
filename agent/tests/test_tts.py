@@ -2,8 +2,8 @@
 # design is that `import duet_agent.tts` must never fail, so the tests must not
 # require model downloads either.
 
-import io
 import base64
+import io
 import sys
 import wave
 from types import SimpleNamespace

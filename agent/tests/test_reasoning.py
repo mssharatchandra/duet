@@ -49,7 +49,7 @@ def test_parse_guidance_coerces_invalid_enums():
 
 
 def test_parse_guidance_rejects_empty_talking_point():
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError, match="empty talking_point"):
         reasoning.parse_guidance(_response(dict(GOOD, talking_point="  ")))
 
 

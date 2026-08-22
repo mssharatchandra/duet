@@ -137,9 +137,7 @@ def meaningful_text(text: str) -> bool:
     words = re.findall(r"[\w']+", text.casefold())
     if not words:
         return False
-    if len(words) >= 4 and len(set(words)) == 1:
-        return False
-    return True
+    return not (len(words) >= 4 and len(set(words)) == 1)
 
 
 def _resample(pcm: np.ndarray, src_rate: int, dst_rate: int) -> np.ndarray:
