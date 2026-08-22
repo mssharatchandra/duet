@@ -24,6 +24,7 @@ jobs:
         run: |
           cp .env.example .env
           mkdir -p ../.local/telemetry
+          touch ../.local/telemetry/ci.jsonl
           docker compose -p langfuse -f langfuse-compose.yml up -d --quiet-pull
           docker compose -p duet-obs -f observability-compose.yml up -d --quiet-pull
       - name: Langfuse healthy
@@ -49,9 +50,9 @@ jobs:
         run: |
           for i in $(seq 1 30); do curl -sf http://localhost:12345/-/ready && break; sleep 2; done
           curl -sf http://localhost:12345/-/ready
-          printf '{"timestamp":"%s","session_id":"ci-smoke","trace_id":"ci-trace","type":"session","state":"started"}\n' "$(date -u +%FT%TZ)" > .local/telemetry/ci.jsonl
+          printf '{"timestamp":"%s","session_id":"ci-smoke","trace_id":"ci-trace","type":"session","state":"started"}\n' "$(date -u +%FT%TZ)" >> .local/telemetry/ci.jsonl
           for i in $(seq 1 30); do
-            curl -sgG --data-urlencode 'query={job="duet-live"} |= "ci-smoke"' http://localhost:3100/loki/api/v1/query | grep -q 'ci-smoke' && exit 0
+            curl -sgG --data-urlencode 'query={job="duet-live"} |= "ci-smoke"' --data-urlencode 'since=5m' http://localhost:3100/loki/api/v1/query_range | grep -q 'ci-smoke' && exit 0
             sleep 2
           done
           docker compose -p duet-obs -f infra/observability-compose.yml logs --tail 80 alloy loki
