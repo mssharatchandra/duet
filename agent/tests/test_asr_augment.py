@@ -1,3 +1,4 @@
+import importlib
 import sys
 from pathlib import Path
 
@@ -6,7 +7,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "eval" / "asr"))
 
-import augment  # noqa: E402 — eval module path is added explicitly above
+augment = importlib.import_module("augment")
 
 
 def _tone(n: int = 24_000, freq: float = 220.0, sr: int = 24_000) -> np.ndarray:
