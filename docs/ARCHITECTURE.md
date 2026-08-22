@@ -37,6 +37,12 @@ web-demo/server.py ───────── session state / consent / opt-out
                                                         │
                                                         ▼
                                                    loudspeaker
+
+Every durable event ──► LiveSessionTelemetry (bounded, fail-silent)
+        ├── Langfuse: one trace per session + reasoning/pipeline observations
+        ├── Prometheus: live RED/latency/interruption metrics at /metrics
+        ├── JSONL → Alloy → Loki: correlated structured event logs
+        └── Postgres: one call summary keyed by session_id + trace_id
 ```
 
 These lanes overlap, but two causal gates remain: enough stable caller intent must exist before an
@@ -63,10 +69,12 @@ private hidden chain-of-thought.
 - Conversation memory currently lives in one process for one session. The action ledger is local
   unless `ASBL_ACTION_MODE=remote` is configured.
 - The repo-root `.env` contains provider credentials locally and is gitignored.
+- Telemetry content is redacted by default. `DUET_TRACE_CONTENT=true` is for explicitly consented
+  local evaluation only, never a production default.
 
 ## Current limitations
 
-- Only one browser session can be active at a time.
+- Only one browser session can be active at a time; this is the largest production blocker.
 - The web server is not yet containerized or authenticated for public use.
 - There is no telephony media adapter, call-origination service, durable consent ledger or human
   transfer path yet.
@@ -92,6 +100,29 @@ Caddy :443 ── TLS + WSS ── Aira API/media service (one isolated Session 
 Before exposing it, replace the process-global single session, add signed session tokens and origin
 checks, enforce server-side call duration/rate limits, add readiness/liveness probes, persist consent
 and DNC before dialing, and package the service behind Caddy in Docker Compose.
+
+## Production decomposition
+
+Static graph analysis with Graphify found 705 nodes and 1,592 edges; the live `Session` object is the
+largest coupling hub. A big-bang rewrite would remove working cancellation invariants and is therefore
+the wrong risk trade. The target is a strangler decomposition behind a transport-neutral contract:
+
+```text
+Browser / SIP / PSTN adapter
+          │ typed audio + control events
+          ▼
+Session supervisor ── owns lifecycle, deadline, cancellation and correlation IDs
+          ├── Audio ingress: framing, jitter, AEC/noise policy
+          ├── Turn manager: VAD, ASR, endpointing, speculation commit
+          ├── Conversation engine: policy, memory, grounded reasoning, actions
+          ├── Speech egress: text chunks, TTS, pacing, playback cancellation
+          └── Telemetry port: metrics, traces, logs, call summary
+```
+
+Each session must have independent queues, provider sockets, deadlines and cancellation scopes. Adapters
+must not import browser globals; tools must be idempotent; provider calls need circuit breakers and
+fallback policy; and admission control must reject load before it destroys latency for active calls.
+The migration order and acceptance SLOs are in `docs/PRODUCTION_READINESS.md`.
 
 ## Telephone adapter
 

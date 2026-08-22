@@ -884,6 +884,46 @@ carrier numbers and termination have marginal cost. The free POC transport will 
 then an Asterisk SIP lab on the existing VPS with two softphones if a call-shaped demonstration is needed.
 The SIP, browser and eventual PSTN adapters must share one Duet session contract.
 
+## 0025 — 2026-08-23 — Instrument the live call path without putting telemetry on the audio critical path
+
+**Status:** Implemented and locally verified; hosted CI verification awaits this commit.
+
+The previous stack proved benchmark instrumentation but left the actual browser call opaque. Every live
+session now creates one correlation identity shared by Langfuse, Prometheus, Loki and Postgres. Reasoning
+generations remain visible in Langfuse; durable voice-pipeline transitions become child observations;
+Prometheus receives bounded-cardinality counters, gauges and fixed-bucket latency histograms; an
+asynchronous JSONL sink is tailed by Grafana Alloy into Loki; and disconnect writes one per-call summary
+to Postgres. `/healthz`, `/readyz` and `/metrics` provide distinct process, configuration and metrics
+surfaces. The server also enforces the existing 240-second cost cap rather than trusting browser code.
+
+The critical design rule is that observability cannot own the audio clock. Langfuse and JSON logging use
+bounded queues with one daemon worker, and Postgres runs after disconnect. If a backend is slow, Duet
+drops telemetry and increments a drop metric instead of delaying speech. This is a deliberate availability
+trade: production alerting must detect missing telemetry, but callers should not hear an observability
+outage. Prompt, transcript and response content is redacted to hashes and character counts by default;
+raw content requires explicit `DUET_TRACE_CONTENT=true` for a consented evaluation.
+
+Graphify 0.9.48 was installed as a local analysis tool and run in code-only mode (local AST parsing, no
+repository upload). It mapped 705 nodes and 1,592 edges and identified `web_demo_server_session` as the
+highest-degree node. We will not respond with a risky big-bang rewrite. The production migration uses a
+strangler: extract telemetry first, then transport/session isolation, turn management, conversation engine
+and speech egress behind typed interfaces, preserving measured cancellation behavior after each step.
+Generated `graphify-out/` data is ignored rather than committed.
+
+Verification at decision time: Ruff passed for the gated package and new modules, **153 tests passed**, the
+Grafana dashboard JSON parsed, and Docker Compose rendered successfully. A real-provider smoke passed ASR,
+Gemini, TTS and cancellation at **2,046 ms** final-speech-end→first-audio and **288 ms**
+caller-audio-start→playback-cancel. The same trace ID was found in the redacted JSON event log, Langfuse and
+the Postgres call summary; Prometheus scraped live metrics into Grafana; and Alloy shipped the redacted JSON
+event into Loki. That run exposed and fixed a small-sample percentile defect where p95 could fall below p50.
+CI repeats the ingestion checks once pushed. No new paid service or cloud resource was created beyond trivial
+already-approved API use.
+
+Primary references: [Graphify docs](https://graphify.com/docs), [ElevenLabs OpenTelemetry trace
+shape](https://elevenlabs.io/docs/eleven-agents/customization/opentelemetry-traces), [ElevenLabs agent
+testing](https://elevenlabs.io/docs/eleven-agents/customization/agent-testing), [ElevenLabs guardrails](https://elevenlabs.io/docs/eleven-agents/best-practices/guardrails),
+and [Grafana Alloy file source](https://grafana.com/docs/alloy/latest/reference/components/loki/loki.source.file/).
+
 ## Running spend
 
 | Date | Item | Cost | Total |
