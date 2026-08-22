@@ -4,7 +4,7 @@
 
 [Architecture](docs/ARCHITECTURE.md) · [Production readiness](docs/PRODUCTION_READINESS.md) · [Research direction](docs/RESEARCH_DIRECTION.md) · [Evaluation](eval/README.md) · [India market](docs/MARKET_ANALYSIS_INDIA.md) · [Two-day syllabus](docs/LEARNING_IN_2_DAYS.md) · [Decisions](docs/DECISIONS.md)
 
-> Project status, 23 August 2026: the local browser demo works with live Sarvam ASR/TTS and Gemini reasoning. It is a controlled-duplex, interruptible cascade—not a frontier end-to-end speech model and not production-ready. The latest synthetic-caller, real-provider smoke measured 2.046 seconds from final speech end to first server audio and 288 ms from caller-audio start to playback cancellation. Live sessions now emit correlated Langfuse traces, Prometheus metrics, Loki logs and Postgres summaries. Human acoustic testing, multilingual evaluation, multi-session isolation and telephony remain open gates.
+> Project status, 23 August 2026: the local browser demo works with live Sarvam ASR/TTS and Gemini reasoning. It is a controlled-duplex, interruptible cascade—not a frontier end-to-end speech model and not production-ready. The post-separation synthetic-caller smoke measured 2.440 seconds from final speech end to first server audio and 301 ms from caller-audio start to playback cancellation; recent runs vary materially. Live sessions emit correlated Langfuse traces, Prometheus metrics, Loki logs and Postgres summaries. Human acoustic testing, multilingual evaluation, multi-session isolation and telephony remain open gates.
 
 ## The thesis
 
