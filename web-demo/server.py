@@ -96,6 +96,7 @@ class Session:
         self.sdr_opted_out = False
         self.barge_in_pending = False
         self.sdr_clarification_pending = False
+        self.sdr_clarification_attempts = 0
         self.current_speech_text = ""
         self._speech_seq = 0
         self.latest_brain_request_id = 0
@@ -617,18 +618,52 @@ class Session:
                     self.sdr_permission = "denied"
                     self.speak(persona.OPT_OUT_ACK)
                     return
+                if resolution == "pause":
+                    self.sdr_clarification_pending = False
+                    self.sdr_clarification_attempts = 0
+                    self.barge_in_pending = False
+                    self.speak(persona.PAUSE_ACK)
+                    history.append(("agent", persona.PAUSE_ACK))
+                    self.emit(type="policy", state="interruption_paused", text="Caller retained the floor")
+                    return
+                if resolution == "resolved":
+                    # The caller supplied the missing preference or question.
+                    # Clear the repair state and let this *same* turn reach the
+                    # normal safety gates and planner; never throw it away.
+                    self.sdr_clarification_pending = False
+                    self.sdr_clarification_attempts = 0
+                    self.barge_in_pending = False
+                    self.emit(
+                        type="policy",
+                        state="interruption_resolved",
+                        text="Explicit caller intent resumed normal reasoning",
+                    )
                 if resolution == "continue":
                     self.sdr_clarification_pending = False
+                    self.sdr_clarification_attempts = 0
                     response = "Thanks for clarifying. What would you like to change?"
                     self.speak(response)
                     history.append(("agent", response))
                     self.emit(type="policy", state="interruption_resolved", text="Caller chose to continue")
-                else:
-                    self.speak(persona.INTERRUPTION_CLARIFICATION)
-                    history.append(("agent", persona.INTERRUPTION_CLARIFICATION))
-                    self.emit(type="policy", state="clarification_required", text="No sales inference made")
-                self.barge_in_pending = False
-                return
+                    self.barge_in_pending = False
+                    return
+                if resolution is None:
+                    # Do not machine-gun the same repair prompt for "yeah" or
+                    # "hmm".  Ask one more, more concrete question, then wait
+                    # silently for a meaningful turn while keeping the floor.
+                    attempts = getattr(self, "sdr_clarification_attempts", 0)
+                    if not persona.is_backchannel(text) and attempts == 0:
+                        response = persona.INTERRUPTION_CLARIFICATION_FOCUSED
+                        self.speak(response)
+                        history.append(("agent", response))
+                    self.sdr_clarification_attempts = attempts + 1
+                    self.emit(
+                        type="policy",
+                        state="clarification_waiting",
+                        text="Waiting for an explicit preference or question; no repeated pitch",
+                    )
+                    self.barge_in_pending = False
+                    return
             if self.sdr_permission == "pending":
                 permission = persona.permission_response(text)
                 if permission == "granted":
@@ -675,6 +710,7 @@ class Session:
                     return
                 if persona.needs_interruption_clarification(text):
                     self.sdr_clarification_pending = True
+                    self.sdr_clarification_attempts = 0
                     self.speak(persona.INTERRUPTION_CLARIFICATION)
                     history.append(("agent", persona.INTERRUPTION_CLARIFICATION))
                     self.emit(
@@ -685,6 +721,7 @@ class Session:
                     return
             if persona.is_ambiguous_change(text):
                 self.sdr_clarification_pending = True
+                self.sdr_clarification_attempts = 0
                 self.barge_in_pending = False
                 self.speak(persona.INTERRUPTION_CLARIFICATION)
                 history.append(("agent", persona.INTERRUPTION_CLARIFICATION))

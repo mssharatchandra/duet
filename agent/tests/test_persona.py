@@ -82,6 +82,17 @@ def test_trial_opt_out_language_and_ambiguous_change_are_distinct():
     assert persona.clarification_response("Keep going, I want to change my preference") == "continue"
 
 
+def test_explicit_change_and_question_are_not_misclassified_as_vague():
+    preference = "I just changed my mind, I want to buy it for my family."
+    question = "Can you tell me about the price?"
+
+    assert persona.has_usable_interruption_intent(preference)
+    assert not persona.is_ambiguous_change(preference)
+    assert not persona.needs_interruption_clarification(preference)
+    assert persona.clarification_response(preference) == "resolved"
+    assert persona.clarification_response(question) == "resolved"
+
+
 def test_interruption_semantics_distinguish_pause_presence_and_vague_change():
     assert persona.is_pause_request("Wait a minute, please")
     assert persona.is_pause_request("Hold on")

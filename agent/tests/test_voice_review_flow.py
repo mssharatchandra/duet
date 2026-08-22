@@ -9,11 +9,12 @@ from types import SimpleNamespace
 WEB_DEMO = Path(__file__).resolve().parents[2] / "web-demo"
 sys.path.insert(0, str(WEB_DEMO))
 
-from server import Session
+from server import Session  # noqa: E402
 
-from duet_agent.actions import ActionRequest, ActionResult
-from duet_agent.hermes import RecallDeck, TutorSession
-from duet_agent.reasoning import Guidance, SpeechPreview
+from duet_agent import persona  # noqa: E402
+from duet_agent.actions import ActionRequest, ActionResult  # noqa: E402
+from duet_agent.hermes import RecallDeck, TutorSession  # noqa: E402
+from duet_agent.reasoning import Guidance, SpeechPreview  # noqa: E402
 
 
 def _session():
@@ -92,6 +93,7 @@ def _sdr_session():
     session.sdr_permission = "pending"
     session.sdr_opted_out = False
     session.sdr_clarification_pending = False
+    session.sdr_clarification_attempts = 0
     session.barge_in_pending = False
     session.latest_brain_request_id = 0
     session.speculative_request_id = 0
@@ -167,7 +169,7 @@ def test_ambiguous_barge_in_clarifies_without_calling_reasoning():
     session._accept_transcript("I just changed my mind, yeah yeah.", 80, [], brain)
 
     assert session.sdr_clarification_pending
-    assert "want me to stop" in spoken[-1]
+    assert spoken[-1] == persona.INTERRUPTION_CLARIFICATION
     assert not brain.called
     assert any(event.get("state") == "clarification_required" for event in events)
 
@@ -206,10 +208,82 @@ def test_vague_barge_in_asks_what_caller_meant():
     brain = Brain()
     session._accept_transcript("Actually, no.", 80, [], brain)
 
-    assert "trying to ask" in spoken[-1]
+    assert spoken[-1] == persona.INTERRUPTION_CLARIFICATION
     assert session.sdr_clarification_pending
     assert not brain.called
     assert any(event.get("state") == "clarification_required" for event in events)
+
+
+def test_explicit_preference_change_during_barge_in_goes_directly_to_reasoning():
+    session, spoken, events = _sdr_session()
+    session.sdr_permission = "granted"
+    session.barge_in_pending = True
+
+    class Brain:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, history, text):
+            self.calls.append((list(history), text))
+            return len(self.calls)
+
+    brain = Brain()
+    history = []
+    text = "I just changed my mind, I want to buy it for my family."
+    session._accept_transcript(text, 80, history, brain)
+
+    assert spoken == []
+    assert not session.sdr_clarification_pending
+    assert brain.calls[-1][1] == text
+    assert any(event.get("state") == "speculation_replaced" for event in events) is False
+
+
+def test_pending_clarification_consumes_meaningful_answer_without_reprompting():
+    session, spoken, events = _sdr_session()
+    session.sdr_permission = "granted"
+    session.sdr_clarification_pending = True
+
+    class Brain:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, history, text):
+            self.calls.append((list(history), text))
+            return len(self.calls)
+
+    brain = Brain()
+    history = []
+    session._accept_transcript("I want to buy it for my family, not as an investment.", 80, history, brain)
+
+    assert spoken == []
+    assert not session.sdr_clarification_pending
+    assert brain.calls[-1][1] == "I want to buy it for my family, not as an investment."
+    assert any(event.get("state") == "interruption_resolved" for event in events)
+
+
+def test_pending_clarification_never_loops_and_later_price_question_resumes():
+    session, spoken, events = _sdr_session()
+    session.sdr_permission = "granted"
+    session.sdr_clarification_pending = True
+
+    class Brain:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, history, text):
+            self.calls.append((list(history), text))
+            return len(self.calls)
+
+    brain = Brain()
+    history = []
+    session._accept_transcript("Yes, I want.", 80, history, brain)
+    session._accept_transcript("Hmm", 80, history, brain)
+    session._accept_transcript("Can you tell me about the price?", 80, history, brain)
+
+    assert spoken == [persona.INTERRUPTION_CLARIFICATION_FOCUSED]
+    assert not session.sdr_clarification_pending
+    assert brain.calls[-1][1] == "Can you tell me about the price?"
+    assert len([event for event in events if event.get("state") == "clarification_waiting"]) == 2
 
 
 def test_presence_check_after_barge_in_gets_a_human_acknowledgment():

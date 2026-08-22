@@ -153,7 +153,10 @@ OPENING = (
 OPT_OUT_ACK = "Of course. I'll stop here, and this demo will not continue or place another call. Take care."
 NOT_NOW_ACK = "No problem. I'll stop here; an ASBL advisor can follow up only at a time you prefer."
 INTERRUPTION_CLARIFICATION = (
-    "Of course—did you want me to stop, or were you trying to ask something?"
+    "Sorry, I heard that you wanted to change direction. What should I update?"
+)
+INTERRUPTION_CLARIFICATION_FOCUSED = (
+    "You can tell me the new preference—for example family home, investment, budget—or ask your question."
 )
 PAUSE_ACK = "Of course. Take your time—I'm here when you're ready."
 PRESENCE_ACK = "Yes, I'm here—and I'm listening. What would you like me to clarify?"
@@ -191,19 +194,63 @@ _CLARIFICATION_CONTINUE = re.compile(
     r"different (?:preference|requirement)|i still want to (?:hear|talk|continue))\b",
     re.IGNORECASE,
 )
+_INTERRUPTION_TOPIC = re.compile(
+    r"\b(family|home|live|living|investment|invest|rental|rent|buy|purchase|price|cost|budget|"
+    r"location|commute|layout|bhk|bedroom|possession|timeline|amenit(?:y|ies)|privacy|"
+    r"visit|brochure|callback|advisor|payment|availability|available)\b",
+    re.IGNORECASE,
+)
+_QUESTION_CUE = re.compile(
+    r"\b(?:what|why|where|when|which|who|how|can you|could you|would you|tell me|explain|compare)\b",
+    re.IGNORECASE,
+)
+_PREFERENCE_CUE = re.compile(
+    r"\b(?:i (?:want|need|prefer|plan|am planning|am looking)|looking for|interested in|"
+    r"change(?:d)? (?:it|that|my preference|my requirement) to)\b",
+    re.IGNORECASE,
+)
+
+
+def has_usable_interruption_intent(text: str) -> bool:
+    """Whether an interrupted turn already says enough to resume normal reasoning.
+
+    Interruption handling must not confuse a discourse marker ("I changed my
+    mind") with missing intent when the same utterance supplies the new target
+    ("...this is for my family").  This deliberately recognizes only explicit
+    questions, domain targets, and stated preferences; the LLM still performs
+    the open-ended interpretation after this deterministic floor-control gate.
+    """
+    if is_opt_out(text) or is_pause_request(text) or is_presence_check(text) or is_backchannel(text):
+        return False
+    words = normalized_words(text)
+    if len(words) < 2:
+        return False
+    return bool(
+        _INTERRUPTION_TOPIC.search(text)
+        or (_QUESTION_CUE.search(text) and len(words) >= 3)
+        or (_PREFERENCE_CUE.search(text) and len(words) >= 4)
+    )
 
 
 def is_ambiguous_change(text: str) -> bool:
     """Changes of mind need a referent before sales reasoning may resume."""
-    return bool(_AMBIGUOUS_CHANGE.search(text)) and not is_opt_out(text)
+    return (
+        bool(_AMBIGUOUS_CHANGE.search(text))
+        and not is_opt_out(text)
+        and not has_usable_interruption_intent(text)
+    )
 
 
 def clarification_response(text: str) -> str | None:
     """Resolve a pending interruption clarification without guessing intent."""
     if is_opt_out(text):
         return "stop"
+    if is_pause_request(text):
+        return "pause"
     if _CLARIFICATION_CONTINUE.search(text):
         return "continue"
+    if has_usable_interruption_intent(text):
+        return "resolved"
     return None
 
 

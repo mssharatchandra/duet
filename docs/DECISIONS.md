@@ -926,6 +926,26 @@ shape](https://elevenlabs.io/docs/eleven-agents/customization/opentelemetry-trac
 testing](https://elevenlabs.io/docs/eleven-agents/customization/agent-testing), [ElevenLabs guardrails](https://elevenlabs.io/docs/eleven-agents/best-practices/guardrails),
 and [Grafana Alloy file source](https://grafana.com/docs/alloy/latest/reference/components/loki/loki.source.file/).
 
+## 0026 — 2026-08-23 — Make interruption repair recoverable instead of a sticky clarification latch
+
+**Status:** Implemented after a real-microphone failure and covered by transcript-level regressions.
+
+A trial exposed a state-machine defect rather than an LLM hallucination: the phrase “I changed my mind”
+always entered clarification even when the same utterance explicitly said “I want to buy for my family.”
+Once in that state, only a narrow list of exact resume phrases could clear it. Meaningful follow-ups were
+discarded before Gemini, causing Aira to repeat the same canned question indefinitely.
+
+Interruption repair now distinguishes acoustic pre-emption from semantic ambiguity. Explicit domain
+preferences and questions resume normal reasoning on the same turn; opt-out, pause and presence checks
+remain deterministic; a genuinely vague change receives one clarification and at most one focused
+reprompt; acknowledgements thereafter leave the caller the floor instead of producing repeated speech.
+This is a bounded repair state, not an LLM prompt workaround.
+
+Verification: the exact family-change and later-price-question sequence is encoded in regression tests,
+the full suite passes with **157 tests**, Ruff passes on all touched files, and a real Sarvam → Gemini →
+Sarvam controlled-duplex smoke passed at **2,058 ms** speech-end→first-audio and **233 ms**
+caller-audio-start→playback-cancel. The local demo was restarted with the fix.
+
 ## Running spend
 
 | Date | Item | Cost | Total |
