@@ -4,8 +4,8 @@
 # Why a browser: getUserMedia gives echo cancellation + noise suppression for
 # free (the terminal demo's raw audio path has neither — speakers made Moshi
 # hear itself), and the page shows everything that used to be invisible:
-# your live transcript (faster-whisper), Duet's words as it speaks them
-# (the inner monologue), brain injections, and audio levels.
+# your live transcript, Duet's words as it speaks them, a safe decision trace
+# (never private chain-of-thought), grounded sources, and audio levels.
 #
 # Transport: one WebSocket. Binary frames = 1920-sample float32 PCM @ 24 kHz
 # (one 80 ms Mimi frame) in each direction. Text frames = JSON control/events
@@ -20,25 +20,43 @@
 
 import argparse
 import asyncio
+import base64
 import json
 import os
 import queue
 import sys
 import threading
 import time
+from collections import deque
 from pathlib import Path
+from urllib.parse import urlencode
 
 import numpy as np
 from aiohttp import WSMsgType, web
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent"))
 
+from duet_agent.asr import SileroSpeechDetector, load_asr, meaningful_text  # noqa: E402
 from duet_agent.asr_util import to_whisper_rate  # noqa: E402
+from duet_agent.actions import ActionLayer  # noqa: E402
 from duet_agent.env import load_repo_env  # noqa: E402
+from duet_agent.hermes import (  # noqa: E402
+    HermesError,
+    TutorGuidance,
+    TutorSession,
+    default_hermes_root,
+    is_explicit_give_up,
+    load_recall_deck,
+    parse_spoken_grade,
+    parse_tutor_guidance,
+    record_review,
+)
 from duet_agent.injector import TextInjector  # noqa: E402
-from duet_agent.reasoning import Guidance, ReasoningFailure, ReasoningLayer  # noqa: E402
+from duet_agent import persona  # noqa: E402
+from duet_agent.reasoning import Guidance, ReasoningFailure, ReasoningLayer, SpeechPreview  # noqa: E402
+from duet_agent.turns import TurnAssembler  # noqa: E402
 
-from capture import SessionCapture  # noqa: E402  — pure module, see capture.py header; safe under --no-model
+from capture import SessionCapture, UtteranceSegmenter  # noqa: E402 — pure; safe under --no-model
 
 # NOTE: `duet_agent.local_loop` (and therefore mlx / moshi_mlx / rustymimi) is deliberately NOT
 # imported at module scope. It's imported lazily, only on the path that actually loads Moshi
@@ -50,26 +68,60 @@ STATIC = Path(__file__).parent / "static"
 SESSIONS_DIR = Path(__file__).resolve().parents[1] / "eval" / "asr" / "sessions"
 CAPTURES: dict[str, SessionCapture] = {}  # session_id -> capture, kept for the process lifetime so
                                            # /corrections can still land after the WS disconnects
+TUTORS: dict[str, TutorSession] = {}       # same lifetime rule for explicit post-session review writes
 
 
 class Session:
-    """One live conversation: model thread (hard real-time) + brain thread (ASR + Gemini)."""
+    """One live conversation: voice thread + brain thread (VAD/ASR + reasoning)."""
 
     def __init__(self, args):
         self.args = args
         self.mic_q: queue.Queue = queue.Queue(maxsize=64)    # browser → model
         self.spk_q: queue.Queue = queue.Queue(maxsize=64)    # model → browser
         self.events: queue.Queue = queue.Queue()             # JSON events → browser
-        self.tap_q: queue.Queue = queue.Queue(maxsize=256)   # mic pcm copy → brain
+        self.tap_q: queue.Queue = queue.Queue(maxsize=256)   # WebSocket mic copy → brain (independent of model load)
+        self.speech_q: queue.Queue = queue.Queue()           # text → local TTS voice
         self.running = True
+        self.agent_speaking = threading.Event()
+        self.cancel_speech = threading.Event()
+        self.listen_after = 0.0
         self.injector: TextInjector | None = None
         self.step_ms: list[float] = []
+        self.tutor: TutorSession | None = None
+        self.tutor_error: str | None = None
+        self.tutor_started = False
+        self.sdr_started = False
+        self.sdr_permission = "pending"
+        self.sdr_opted_out = False
+        self.barge_in_pending = False
+        self.sdr_clarification_pending = False
+        self.current_speech_text = ""
+        self._speech_seq = 0
+        self.latest_brain_request_id = 0
+        self.speculative_request_id = 0
+        self.speculative_text = ""
+        self.speculative_committed_ids: set[int] = set()
+        self.speculative_results: dict[int, object] = {}
+        self.ready_brain_results = deque()
+        self.pending_speech_previews: dict[int, SpeechPreview] = {}
+        self.early_spoken_ids: set[int] = set()
+        self.lead_signals = {dimension: "none" for dimension in persona.BANT}
+        self.lead_evidence = {dimension: None for dimension in persona.BANT}
+        self.recent_agent_responses = deque(maxlen=4)
         # session capture — opt-in only; see enable_capture(). session_id doubles as the
         # eval/asr/sessions/<session_id>/ directory name once capture is turned on.
         self.session_id = f"{int(time.time())}-{os.urandom(3).hex()}"
+        self.action_layer = ActionLayer(self.session_id)
         self.capture: SessionCapture | None = None
         if getattr(args, "capture", False):
             self.enable_capture()
+        if args.mode == "hermes":
+            try:
+                deck = load_recall_deck(args.hermes_root, slug=args.hermes_run)
+                self.tutor = TutorSession(deck)
+                TUTORS[self.session_id] = self.tutor
+            except HermesError as e:
+                self.tutor_error = str(e)
 
     def emit(self, **ev) -> None:
         self.events.put(ev)
@@ -79,21 +131,56 @@ class Session:
         redundant UI toggle) is a no-op, not a second directory."""
         if self.capture is not None:
             return
-        self.capture = SessionCapture(SESSIONS_DIR / self.session_id)
+        self.capture = SessionCapture(SESSIONS_DIR / self.session_id, min_rms_threshold=self.args.asr_min_rms)
         CAPTURES[self.session_id] = self.capture
         self.emit(type="capture_status", enabled=True, session_id=self.session_id)
 
     def start(self) -> None:
+        if self.tutor_error:
+            self.emit(type="error", text=f"Hermes unavailable: {self.tutor_error}")
         threading.Thread(target=self._model_loop, daemon=True).start()
         threading.Thread(target=self._brain_loop, daemon=True).start()
 
     def stop(self) -> None:
         self.running = False
+        self.cancel_speech.set()
+
+    @staticmethod
+    def _clear_queue(q: queue.Queue) -> None:
+        while True:
+            try:
+                q.get_nowait()
+            except queue.Empty:
+                return
+
+    def interrupt_playback(self, transcript: str = "") -> None:
+        """Stop current and buffered speech when verified user speech arrives."""
+        if not self.args.barge_in or not self.agent_speaking.is_set():
+            return
+        self.cancel_speech.set()
+        self._clear_queue(self.spk_q)
+        self._clear_queue(self.speech_q)
+        self.emit(type="playback_cancel", reason="user_barge_in", transcript=transcript)
+        self.emit(type="status", text="interruption detected — Duet yielded the floor")
+
+    def handle_speech_start(self) -> None:
+        """Yield immediately on provider VAD, before a final transcript exists.
+
+        Browser echo cancellation is the first defence against self-echo.  The
+        semantic transcript still decides what happens next; this method only
+        gives the acoustic floor to the caller.
+        """
+        if self.args.barge_in and self.agent_speaking.is_set():
+            self.barge_in_pending = True
+            self.interrupt_playback("")
 
     # -- the 80 ms heartbeat ------------------------------------------------
 
     def _model_loop(self) -> None:
-        if self.args.no_model:
+        if self.args.voice_stack == "open":
+            self._open_voice_loop()
+            return
+        if self.args.voice_stack == "none":
             self._model_loop_stub()
             return
 
@@ -119,6 +206,7 @@ class Session:
             self.emit(type="error", text=f"model failed to load: {e}")
             return
         self.emit(type="status", text=f"ready — Moshi loaded in {load_s:.1f}s. Say hi!", ready=True)
+        self._start_tutor()
 
         # One-frame pipeline: while the Rust codec encodes THIS frame on its own
         # threads, the model steps on the PREVIOUS frame's tokens, and decoded
@@ -127,6 +215,7 @@ class Session:
         # each stage individually meets with room to spare. Costs one frame
         # (80 ms) of added response latency; buys back ~40 ms of budget per tick.
         last_stats = time.time()
+        last_health_warning = 0.0
         dropped = 0
         pending_tokens = None
         while self.running:
@@ -152,11 +241,6 @@ class Session:
                     self.emit(type="status", text=f"⚠ model behind real-time — dropped {dropped} frames (close heavy apps?)")
             rms = float(np.sqrt(np.mean(pcm**2)))
             self.injector.on_user_frame(rms)
-            try:
-                self.tap_q.put_nowait(pcm)
-            except queue.Full:
-                pass
-
             codec.encode(pcm)  # submit; Rust encodes while we step below
             if pending_tokens is not None:
                 t0 = time.perf_counter()
@@ -175,90 +259,971 @@ class Session:
 
             if time.time() - last_stats > 2 and self.step_ms:
                 arr = np.array(self.step_ms[-100:])
-                self.emit(type="stats", p50=round(float(np.percentile(arr, 50)), 1),
-                          p95=round(float(np.percentile(arr, 95)), 1), frames=len(self.step_ms))
+                p50 = round(float(np.percentile(arr, 50)), 1)
+                p95 = round(float(np.percentile(arr, 95)), 1)
+                miss_rate = round(float(np.mean(arr > 80.0)), 3)
+                degraded = p95 > 80.0 or miss_rate > 0.05
+                self.emit(type="stats", p50=p50, p95=p95, frames=len(self.step_ms),
+                          miss_rate=miss_rate, degraded=degraded)
+                if degraded and time.time() - last_health_warning > 10:
+                    self.emit(type="status", text=f"⚠ realtime budget missed: p95 {p95} ms, {miss_rate:.0%} frames over 80 ms")
+                    last_health_warning = time.time()
                 last_stats = time.time()
 
     def _model_loop_stub(self) -> None:
         """--no-model path: no mlx/moshi_mlx/rustymimi import, no weights, no GPU memory —
         required so --capture can be developed/tested without a model load while another
         process may be using the GPU (docs/DECISIONS.md 0008 on resource contention). Mic
-        frames still flow to the brain thread via tap_q; there's just no mouth to speak back,
+        frames flow directly from the WebSocket to the brain's tap_q; there's no mouth to speak back,
         so the speaker stays silent and no `duet`/`stats` events are ever emitted."""
         self.emit(type="status", text="--no-model: Moshi skipped — ASR/brain/capture only", ready=True)
+        self._start_tutor()
         while self.running:
             try:
-                pcm = self.mic_q.get(timeout=0.5)
+                self.mic_q.get(timeout=0.5)
             except queue.Empty:
                 continue
+
+    def _open_voice_loop(self) -> None:
+        """Streaming cascade mouth with optional, explicitly controlled barge-in.
+
+        The default remains half-duplex because browser AEC is not a correctness
+        boundary.  With ``--barge-in``, Sarvam continues listening and a
+        meaningful partial transcript cancels current and buffered playback.
+        """
+        from duet_agent import tts
+
+        self.emit(type="status", text=f"loading {self.args.tts_backend} voice …")
+        try:
+            voice = tts.load(self.args.tts_backend)
+            warm = getattr(voice, "warm", None)
+            if warm is not None:
+                warm()
+        except Exception as e:
+            self.emit(type="error", text=f"local TTS unavailable: {type(e).__name__}: {e}")
+            return
+        vad_label = "Sarvam streaming VAD" if self.args.asr == "sarvam" else "Silero VAD"
+        self.emit(
+            type="status",
+            text=(
+                f"ready — voice stack ({self.args.asr}, {vad_label}, {voice.name} TTS"
+                + (
+                    f": {voice.speaker}, pace {voice.pace:.2f}"
+                    + (f", warmth {voice.temperature:.2f}" if getattr(voice, "temperature", None) is not None else "")
+                    if voice.name.startswith("sarvam") else ""
+                )
+                + ")"
+            ),
+            ready=True,
+        )
+        self._start_tutor()
+        self._start_sdr()
+        while self.running:
             try:
-                self.tap_q.put_nowait(pcm)
-            except queue.Full:
-                pass
+                speech_item = self.speech_q.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if isinstance(speech_item, tuple):
+                utterance_id, text = speech_item
+            else:  # compatibility with old queues and narrow unit tests
+                utterance_id, text = 0, speech_item
+            self.cancel_speech.clear()
+            self.agent_speaking.set()
+            self.current_speech_text = text
+            if self.args.barge_in:
+                self.emit(type="asr_state", state="listening", speech=False, streaming=True, barge_in=True)
+            else:
+                self.emit(type="asr_state", state="paused", reason="Duet is speaking")
+            self.emit(type="tts_state", state="speaking", backend=voice.name, text=text, utterance_id=utterance_id)
+            try:
+                tts_started = time.perf_counter()
+                first_audio = True
+                audio_chunks = voice.synthesize_stream(text)
+                frames = tts.iter_pcm_frames(audio_chunks, FRAME)
+                for frame in frames:
+                    if self.cancel_speech.is_set():
+                        break
+                    if first_audio:
+                        self.emit(
+                            type="tts_state",
+                            state="first_audio",
+                            backend=voice.name,
+                            latency_ms=round((time.perf_counter() - tts_started) * 1000),
+                            utterance_id=utterance_id,
+                        )
+                        first_audio = False
+                    while self.running:
+                        if self.cancel_speech.is_set():
+                            break
+                        try:
+                            self.spk_q.put(frame, timeout=0.5)
+                            break
+                        except queue.Full:
+                            continue
+                    # The browser player consumes at this rate. Pacing here prevents
+                    # its bounded jitter buffer from dropping a long TTS response.
+                    time.sleep(FRAME / 24_000)
+            except Exception as e:
+                self.emit(type="error", text=f"TTS failed: {type(e).__name__}: {e}")
+            finally:
+                # Generator.close() propagates cancellation into persistent TTS,
+                # which drops unread provider audio before the next utterance.
+                if "frames" in locals() and hasattr(frames, "close"):
+                    frames.close()
+                interrupted = self.cancel_speech.is_set()
+                if not interrupted:
+                    # Half-duplex needs an echo tail. In barge-in mode the mic is
+                    # already live, so only normal completion gets a short tail.
+                    time.sleep(0.15 if self.args.barge_in else 0.45)
+                self.listen_after = time.monotonic() + (0.05 if self.args.barge_in else 0.25)
+                self.agent_speaking.clear()
+                self.current_speech_text = ""
+                self.emit(
+                    type="tts_state",
+                    state="interrupted" if interrupted else "listening",
+                    backend=voice.name,
+                    utterance_id=utterance_id,
+                )
+        close_voice = getattr(voice, "close", None)
+        if close_voice is not None:
+            close_voice()
+
+    def speak(self, text: str) -> None:
+        text = text.strip()
+        if not text:
+            return
+        if self.args.voice_stack == "open":
+            self.agent_speaking.set()
+            self._speech_seq = getattr(self, "_speech_seq", 0) + 1
+            self.emit(type="duet", text=text, utterance_id=self._speech_seq)
+            self.speech_q.put((self._speech_seq, text))
+        elif self.injector is not None:
+            self.injector.inject(text)
+
+    def _start_tutor(self) -> None:
+        if self.tutor is None or self.tutor_started:
+            return
+        self.tutor_started = True
+        opening = self.tutor.opening()
+        self.speak(opening)
+        sarvam_voice = self.args.asr == "sarvam" or self.args.tts_backend.startswith("sarvam")
+        if sarvam_voice:
+            voice_privacy = " Spoken audio and/or tutor speech is processed by Sarvam's API."
+        else:
+            voice_privacy = " Speech recognition and synthesis stay on this Mac."
+        self.emit(
+            type="tutor_setup",
+            session_id=self.session_id,
+            title=self.tutor.deck.title,
+            slug=self.tutor.deck.slug,
+            due_at=self.tutor.deck.due_at.isoformat(),
+            question=opening,
+            total=len(self.tutor.deck.questions),
+            grading="remote" if self.args.hermes_remote_grading else "self",
+            privacy=(
+                "Study material and answers are sent to Gemini for grading." + voice_privacy
+                if self.args.hermes_remote_grading
+                else "Study material is not sent to a remote grader." + voice_privacy
+            ),
+        )
+
+    def _start_sdr(self) -> None:
+        """Begin a consented-lead callback with deterministic AI disclosure."""
+        if self.args.mode != "sdr" or self.sdr_started:
+            return
+        self.sdr_started = True
+        self.speak(persona.OPENING)
+        self.emit(
+            type="policy",
+            state="permission_pending",
+            text="AI identity disclosed; waiting for permission before discovery",
+        )
+
+    def grade_tutor(self, verdict: str) -> None:
+        """Apply a UI self-grade; remote-grading sessions reject this control."""
+        if self.tutor is None or self.args.hermes_remote_grading:
+            return
+        try:
+            self._apply_tutor_grade(self.tutor.self_grade(verdict))
+        except HermesError as e:
+            self.emit(type="status", text=f"self-grade ignored: {e}")
+
+    def _apply_tutor_grade(self, guidance: TutorGuidance) -> None:
+        if self.tutor is None:
+            return
+        spoken = self.tutor.apply_grade(guidance)
+        self.speak(spoken)
+        self.emit(type="brain", text=spoken, latency_ms=round(guidance.latency_ms), intent=f"recall:{guidance.verdict}")
+        self.emit(
+            type="tutor_progress",
+            verdict=guidance.verdict,
+            feedback=guidance.feedback,
+            attempted=self.tutor.attempted,
+            correct=self.tutor.strict_correct,
+            total=len(self.tutor.deck.questions),
+            complete=self.tutor.complete,
+            next_question=None if self.tutor.complete else self.tutor.current_question,
+        )
 
     # -- the slow brain -------------------------------------------------------
 
     def _brain_loop(self) -> None:
+        brain = self._make_brain()
+        if self.args.asr == "sarvam":
+            completed = asyncio.run(self._sarvam_brain_loop(brain))
+            if completed or not self.running:
+                return
+            self.emit(type="status", text="Sarvam stream unavailable — falling back to local Parakeet")
+            self.args.asr = "parakeet"
+        self._local_brain_loop(brain)
+
+    def _make_brain(self):
         try:
-            from faster_whisper import WhisperModel
-            asr = WhisperModel(os.environ.get("ASR_MODEL", "small.en"), device="cpu", compute_type="int8")
-        except Exception as e:
-            self.emit(type="status", text=f"ASR unavailable ({e}) — transcript disabled, Moshi still works")
-            asr = None
-        try:
-            brain = ReasoningLayer()
+            if self.tutor is not None and self.args.hermes_remote_grading:
+                return ReasoningLayer(
+                    system_prompt=self.tutor.system_prompt(),
+                    prompt_builder=self.tutor.grading_prompt,
+                    response_parser=parse_tutor_guidance,
+                )
+            if self.args.mode == "sdr":
+                return ReasoningLayer()
         except RuntimeError as e:
             self.emit(type="status", text=f"brain disabled: {e}")
-            brain = None
+        return None
+
+    def _start_speculative_reasoning(self, text: str, history, brain) -> None:
+        """Start reasoning on a stable interim, but never speak before commit."""
+        if (
+            brain is None
+            or self.args.mode != "sdr"
+            or self.sdr_permission != "granted"
+            or self.sdr_opted_out
+            or persona.is_opt_out(text)
+            or persona.is_ambiguous_change(text)
+            or persona.is_backchannel(text)
+            or len(persona.normalized_words(text)) < 4
+        ):
+            return
+        if getattr(self, "speculative_request_id", 0):
+            return
+        request_id = brain.request(history, text)
+        self.speculative_request_id = request_id
+        self.speculative_text = text
+        self.emit(
+            type="brain_state",
+            state="speculating",
+            request_id=request_id,
+            text="Stable interim sent to reasoning; speech remains gated until final transcript",
+        )
+
+    def _commit_or_replace_speculation(self, text: str, history, brain) -> None:
+        request_id = getattr(self, "speculative_request_id", 0)
+        speculative_text = getattr(self, "speculative_text", "")
+        if request_id and persona.partial_matches_final(speculative_text, text):
+            self.latest_brain_request_id = request_id
+            self.speculative_committed_ids.add(request_id)
+            cached = self.speculative_results.pop(request_id, None)
+            if cached is not None:
+                self.ready_brain_results.append(cached)
+            self.emit(
+                type="brain_state",
+                state="speculation_committed",
+                request_id=request_id,
+                text="Final transcript confirmed the speculative reasoning input",
+            )
+        elif brain:
+            self.latest_brain_request_id = brain.request(history, text)
+            if request_id:
+                self.emit(
+                    type="brain_state",
+                    state="speculation_replaced",
+                    request_id=request_id,
+                    text="Final transcript changed meaning; speculative result was discarded",
+                )
+        self.speculative_request_id = 0
+        self.speculative_text = ""
+
+    def _accept_transcript(self, text, latency_ms, history, brain, cap_record=None) -> None:
+        raw_text = text.strip()
+        accepted = meaningful_text(raw_text)
+        text = persona.normalize_domain_terms(raw_text) if accepted else raw_text
+        self.emit(
+            type="asr_state",
+            state="result",
+            latency_ms=round(latency_ms),
+            text=text if accepted else "",
+            raw_text=raw_text if accepted and raw_text != text else "",
+        )
+        if not accepted:
+            self.emit(type="status", text="ASR output rejected: no meaningful words")
+            return
+        self.emit(type="you", text=text, raw_text=raw_text if raw_text != text else "")
+        if self.capture is not None and cap_record is not None:
+            self._attach_capture(cap_record, raw_text)
+        if self.args.mode == "sdr":
+            history.append(("lead", text))
+            if self.sdr_opted_out:
+                return
+            if persona.is_opt_out(text):
+                self.sdr_opted_out = True
+                self.sdr_permission = "denied"
+                self.interrupt_playback(text)
+                self.speak(persona.OPT_OUT_ACK)
+                self.emit(type="policy", state="do_not_contact", text="Opt-out detected; sales reasoning disabled")
+                return
+            if getattr(self, "sdr_clarification_pending", False):
+                resolution = persona.clarification_response(text)
+                if resolution == "stop":  # defensive: explicit opt-out is handled above
+                    self.sdr_opted_out = True
+                    self.sdr_permission = "denied"
+                    self.speak(persona.OPT_OUT_ACK)
+                    return
+                if resolution == "continue":
+                    self.sdr_clarification_pending = False
+                    response = "Thanks for clarifying. What would you like to change?"
+                    self.speak(response)
+                    history.append(("agent", response))
+                    self.emit(type="policy", state="interruption_resolved", text="Caller chose to continue")
+                else:
+                    self.speak(persona.INTERRUPTION_CLARIFICATION)
+                    history.append(("agent", persona.INTERRUPTION_CLARIFICATION))
+                    self.emit(type="policy", state="clarification_required", text="No sales inference made")
+                self.barge_in_pending = False
+                return
+            if self.sdr_permission == "pending":
+                permission = persona.permission_response(text)
+                if permission == "granted":
+                    self.sdr_permission = "granted"
+                    response = "Thank you. Would this be mainly a home for your family, or an investment?"
+                    self.speak(response)
+                    history.append(("agent", response))
+                    self.emit(type="policy", state="permission_granted", text="Discovery may proceed")
+                elif permission == "denied":
+                    self.sdr_permission = "denied"
+                    self.speak(persona.NOT_NOW_ACK)
+                    self.emit(type="policy", state="permission_denied", text="Conversation stopped before sales discovery")
+                else:
+                    response = "Before we continue, would you like to have this brief conversation now?"
+                    self.speak(response)
+                    history.append(("agent", response))
+                return
+            if self.sdr_permission != "granted":
+                return
+            if persona.is_ambiguous_change(text):
+                self.sdr_clarification_pending = True
+                self.barge_in_pending = False
+                self.speak(persona.INTERRUPTION_CLARIFICATION)
+                history.append(("agent", persona.INTERRUPTION_CLARIFICATION))
+                self.emit(
+                    type="policy",
+                    state="clarification_required",
+                    text="Ambiguous change after interruption; planner was not called",
+                )
+                return
+            if persona.is_sensitive_profiling_request(text):
+                self.speak(persona.SENSITIVE_PROFILE_ACK)
+                history.append(("agent", persona.SENSITIVE_PROFILE_ACK))
+                self.emit(
+                    type="policy",
+                    state="sensitive_profiling_blocked",
+                    text="Sensitive traits cannot be used for purchase scoring or persuasion",
+                )
+                return
+            if persona.is_backchannel(text):
+                self.emit(
+                    type="policy",
+                    state="listener_backchannel",
+                    text="Acknowledgment heard; Aira waits instead of starting another pitch",
+                )
+                return
+            if brain:
+                self._commit_or_replace_speculation(text, history[:-1], brain)
+            return
+        if self.tutor is not None:
+            if self.tutor.pending_answer is not None and not self.args.hermes_remote_grading:
+                verdict = parse_spoken_grade(text)
+                if verdict:
+                    feedback = "Repeating." if verdict == "repeat" else f"Marked {verdict}."
+                    self._apply_tutor_grade(TutorGuidance(verdict=verdict, feedback=feedback))
+                else:
+                    self.speak("I have your answer. Please say correct, partial, incorrect, skip, or repeat.")
+                    self.emit(type="status", text="waiting for a spoken self-grade")
+                history.append(("lead", text))
+                return
+            if self.tutor.accept_answer(text):
+                if brain:
+                    brain.request(history, text)
+                else:
+                    self.emit(
+                        type="tutor_answer",
+                        text=text,
+                        question=self.tutor.current_question,
+                        question_number=self.tutor.index + 1,
+                    )
+                    if is_explicit_give_up(text):
+                        self._apply_tutor_grade(TutorGuidance(verdict="skip", feedback="No problem — marked skipped."))
+                    else:
+                        self.speak("I have your answer. How would you grade it: correct, partial, incorrect, or skip?")
+            else:
+                self.emit(type="status", text="the review is already complete")
+        elif brain:
+            brain.request(history, text)
+        history.append(("lead", text))
+
+    def _attach_capture(self, cap_record, text: str) -> None:
+        if self.capture is None:
+            return
+        self.capture.set_hypothesis(cap_record.utterance_id, text)
+        self.emit(
+            type="captured",
+            utterance_id=cap_record.utterance_id,
+            asr_hypothesis=text,
+            duration_s=cap_record.duration_s,
+        )
+
+    def _poll_brain(self, brain, history) -> None:
+        if not brain:
+            return
+        self._poll_brain_preview(brain, history)
+        ready = getattr(self, "ready_brain_results", None)
+        result = ready.popleft() if ready else brain.poll()
+        if self.args.mode == "sdr" and self.sdr_opted_out:
+            return
+        request_id = getattr(result, "request_id", 0)
+        speculative_id = getattr(self, "speculative_request_id", 0)
+        committed = getattr(self, "speculative_committed_ids", set())
+        if result is not None and request_id and request_id == speculative_id and request_id not in committed:
+            self.speculative_results[request_id] = result
+            self.emit(
+                type="brain_state",
+                state="speculation_ready",
+                request_id=request_id,
+                text="Reasoning ready but held until the final transcript confirms it",
+            )
+            return
+        if isinstance(result, TutorGuidance):
+            try:
+                self._apply_tutor_grade(result)
+            except HermesError as e:
+                self.emit(type="status", text=f"tutor result ignored: {e}")
+        elif isinstance(result, Guidance):
+            if not hasattr(self, "lead_signals"):
+                self.lead_signals = {dimension: "none" for dimension in persona.BANT}
+                self.lead_evidence = {dimension: None for dimension in persona.BANT}
+                self.recent_agent_responses = deque(maxlen=4)
+            request_id = getattr(result, "request_id", 0)
+            latest = getattr(self, "latest_brain_request_id", 0)
+            if request_id and latest and request_id < latest:
+                self.emit(
+                    type="policy",
+                    state="stale_reasoning_suppressed",
+                    text=f"Dropped response {request_id}; the conversation has moved to turn {latest}",
+                )
+                return
+
+            rank = {"none": 0, "weak": 1, "strong": 2}
+            for dimension in persona.BANT:
+                incoming = result.lead_signals.get(dimension, "none")
+                if rank[incoming] > rank[getattr(self, "lead_signals", {}).get(dimension, "none")]:
+                    self.lead_signals[dimension] = incoming
+                evidence = result.lead_evidence.get(dimension)
+                if evidence:
+                    self.lead_evidence[dimension] = evidence
+
+            spoken = result.talking_point.strip()
+            policy_check = "passed"
+            problem = persona.response_problem(spoken) if spoken else None
+            tool_requests = result.tool_requests or (
+                [result.tool_request] if result.tool_request is not None else []
+            )
+            if tool_requests:
+                action_layer = getattr(self, "action_layer", None)
+                if action_layer is None:
+                    action_layer = ActionLayer(getattr(self, "session_id", "test-session"))
+                    self.action_layer = action_layer
+                action_ids = []
+                for tool_request in tool_requests:
+                    action_id = action_layer.request(tool_request)
+                    action_ids.append(action_id)
+                    self.emit(
+                        type="action",
+                        state="requested",
+                        name=tool_request.name,
+                        action_id=action_id,
+                        enabled=action_layer.enabled,
+                        adapter=action_layer.capability_label,
+                    )
+                if problem == "unavailable_tool_claim" or not spoken:
+                    spoken = (
+                        "Certainly. I am putting those requests through now."
+                        if len(tool_requests) > 1 else "Certainly. I am putting that request through now."
+                    )
+                # Purely transactional turns should speak the adapter's actual
+                # accepted/completed result, not queue a generic promise and a
+                # confirmation back-to-back. Preserve planner speech only when
+                # it also carries a grounded project answer.
+                if not result.fact_ids:
+                    spoken = ""
+                policy_check = (
+                    f"{len(action_ids)} action request(s) sent through "
+                    f"{action_layer.capability_label}; confirmation pending"
+                )
+            elif problem == "unavailable_tool_claim":
+                spoken = (
+                    "I can do that through ASBL's internal product once you explicitly ask me to."
+                )
+                policy_check = "completion claim blocked; no structured tool request"
+            elif problem == "too_long_for_voice":
+                spoken = " ".join(spoken.split()[:32]).rstrip(",;:") + "."
+                policy_check = "shortened for speech"
+
+            early_spoken = request_id in getattr(self, "early_spoken_ids", set())
+            if spoken and not early_spoken and persona.is_repetitive_response(
+                spoken, list(getattr(self, "recent_agent_responses", []))
+            ):
+                spoken = (
+                    "I'm repeating myself. Let me reset. What would Broadway need to prove "
+                    "before you would seriously consider it?"
+                )
+                policy_check = "repetition detected; reset question used"
+
+            if result.response_strategy != "wait" and spoken and not early_spoken:
+                self.speak(spoken)
+                history.append(("agent", spoken))
+                self.recent_agent_responses.append(spoken)
+            self.emit(
+                type="brain",
+                text=spoken,
+                latency_ms=round(result.latency_ms),
+                intent=result.intent,
+                stage=result.conversation_stage,
+                strategy=result.response_strategy,
+                next_action=result.next_action,
+                decision_summary=result.decision_summary,
+                facts=persona.resolve_fact_ids(result.fact_ids),
+                signals=self.lead_signals,
+                evidence=self.lead_evidence,
+                policy_check=policy_check,
+                request_id=request_id,
+                user_utterance=result.user_utterance,
+            )
+        elif isinstance(result, ReasoningFailure):
+            self.emit(type="status", text=f"brain call failed ({result.reason[:60]}) — continuing unaided")
+
+    def _poll_brain_preview(self, brain, history) -> None:
+        """Release policy-checked speech before slower audit metadata completes."""
+        poll_preview = getattr(brain, "poll_preview", None)
+        pending = getattr(self, "pending_speech_previews", None)
+        if pending is None:
+            pending = {}
+            self.pending_speech_previews = pending
+        if poll_preview is not None:
+            preview = poll_preview()
+            if preview is not None:
+                pending[preview.request_id] = preview
+
+        latest = getattr(self, "latest_brain_request_id", 0)
+        committed = getattr(self, "speculative_committed_ids", set())
+        already_spoken = getattr(self, "early_spoken_ids", set())
+        for request_id, preview in list(pending.items()):
+            if request_id < latest and request_id not in committed:
+                pending.pop(request_id, None)
+                continue
+            if request_id != latest and request_id not in committed:
+                continue
+            pending.pop(request_id, None)
+            text = preview.text.strip()
+            problem = persona.response_problem(text) if text else "empty"
+            if (
+                not text
+                or problem is not None
+                or persona.is_transactional_request(preview.user_utterance)
+                or persona.is_repetitive_response(text, list(getattr(self, "recent_agent_responses", [])))
+            ):
+                self.emit(
+                    type="brain_state",
+                    state="early_speech_gated",
+                    request_id=request_id,
+                    text="Streamed speech waited for final policy or tool metadata",
+                )
+                continue
+            if request_id in already_spoken or self.sdr_opted_out:
+                continue
+            self.speak(text)
+            history.append(("agent", text))
+            self.recent_agent_responses.append(text)
+            already_spoken.add(request_id)
+            self.early_spoken_ids = already_spoken
+            self.emit(
+                type="brain_state",
+                state="early_speech",
+                request_id=request_id,
+                latency_ms=round(preview.latency_ms),
+                text="Complete spoken field passed policy while audit metadata kept streaming",
+            )
+
+    def _poll_actions(self, history) -> None:
+        layer = getattr(self, "action_layer", None)
+        if layer is None:
+            return
+        result = layer.poll()
+        if result is None:
+            return
+        if self.args.mode == "sdr" and self.sdr_opted_out:
+            self.emit(type="action", state="confirmation_suppressed_after_opt_out", name=result.name)
+            return
+        spoken = result.spoken_confirmation
+        self.speak(spoken)
+        history.append(("agent", spoken))
+        self.emit(
+            type="action",
+            state=result.status,
+            name=result.name,
+            reference_id=result.reference_id,
+            latency_ms=round(result.latency_ms),
+            reason=result.reason,
+            adapter=result.adapter,
+            text=spoken,
+        )
+
+    def _local_brain_loop(self, brain) -> None:
+        try:
+            asr = load_asr(self.args.asr)
+            speech_detector = SileroSpeechDetector(
+                threshold=self.args.vad_threshold,
+                min_speech_ms=self.args.vad_min_speech_ms,
+            )
+            self.emit(type="asr_state", state="ready", model=asr.name, vad=speech_detector.name)
+        except Exception as e:
+            self.emit(type="status", text=f"ASR unavailable ({type(e).__name__}: {e}) — transcript disabled")
+            asr = None
+            speech_detector = None
 
         history: list[tuple[str, str]] = []
-        buf: list[np.ndarray] = []
-        voiced = quiet = 0
+        segmenter = UtteranceSegmenter(min_rms_threshold=self.args.asr_min_rms)
+        last_asr_state = 0.0
         while self.running:
             try:
                 pcm = self.tap_q.get(timeout=0.5)
             except queue.Empty:
                 pcm = None
-            # Feed capture the SAME frame, in the SAME order, as the inline segmenter below —
-            # both run identical thresholds (SessionCapture mirrors these on purpose, see
-            # capture.py's header), so they close an utterance on the exact same frame. That's
+            # Feed capture the SAME frame, in the SAME order, as the shared segmenter below —
+            # both are instances of capture.UtteranceSegmenter, so they close on the same frame. That's
             # what lets `cap_record` below be the capture-side record for whatever text the ASR
             # branch produces this iteration, with no separate alignment bookkeeping needed.
             cap_record = self.capture.add_frame(pcm) if (pcm is not None and self.capture is not None) else None
-            if pcm is not None and asr is not None:
-                rms = float(np.sqrt(np.mean(pcm**2)))
-                if rms > 0.015:
-                    voiced += 1
-                    quiet = 0
-                    buf.append(pcm)
-                elif buf:
-                    quiet += 1
-                    buf.append(pcm)
-                    if quiet >= 8 and voiced >= 4:  # ≥0.3 s speech then 0.6 s silence
-                        audio = np.concatenate(buf)
-                        buf, voiced, quiet = [], 0, 0
-                        segments, _ = asr.transcribe(to_whisper_rate(audio), language="en", beam_size=1)
-                        text = " ".join(s.text.strip() for s in segments).strip()
-                        if text:
-                            self.emit(type="you", text=text)
-                            if self.capture is not None and cap_record is not None:
-                                self.capture.set_hypothesis(cap_record.utterance_id, text)
-                                self.emit(type="captured", utterance_id=cap_record.utterance_id,
-                                          asr_hypothesis=text, duration_s=cap_record.duration_s)
-                            if brain:
-                                brain.request(history, text)
-                            history.append(("lead", text))
-                    elif quiet >= 8:
-                        buf, voiced, quiet = [], 0, 0
-            if brain:
-                result = brain.poll()
-                if isinstance(result, Guidance) and self.injector:
-                    self.injector.inject(result.talking_point)
-                    history.append(("agent", result.talking_point))
-                    self.emit(type="brain", text=result.talking_point,
-                              latency_ms=round(result.latency_ms), intent=result.intent)
-                elif isinstance(result, ReasoningFailure):
-                    self.emit(type="status", text=f"brain call failed ({result.reason[:60]}) — continuing unaided")
+            if pcm is not None and asr is not None and speech_detector is not None:
+                audio = segmenter.add_frame(pcm)
+                if time.time() - last_asr_state > 0.4:
+                    self.emit(type="asr_state", state="calibrating" if segmenter.calibrating else "listening",
+                              rms=round(segmenter.last_rms, 5), threshold=round(segmenter.threshold, 5),
+                              speech=segmenter.active)
+                    last_asr_state = time.time()
+                if audio is not None:
+                    speech_ms = speech_detector.speech_ms(audio)
+                    if speech_ms < self.args.vad_min_speech_ms:
+                        self.emit(
+                            type="asr_state",
+                            state="rejected",
+                            reason="no human speech detected",
+                            speech_ms=speech_ms,
+                        )
+                        continue
+                    self.emit(
+                        type="asr_state",
+                        state="transcribing",
+                        duration_s=round(len(audio) / 24_000, 2),
+                        speech_ms=speech_ms,
+                    )
+                    try:
+                        transcript = asr.transcribe(audio)
+                        text = transcript.text
+                    except Exception as e:
+                        self.emit(type="status", text=f"ASR failed: {type(e).__name__}: {e}")
+                        continue
+                    self._accept_transcript(text, transcript.latency_ms, history, brain, cap_record)
+            self._poll_brain(brain, history)
+            self._poll_actions(history)
+
+    async def _sarvam_brain_loop(self, brain) -> bool:
+        if self.args.sarvam_stt == "realtime":
+            completed = await self._sarvam_realtime_brain_loop(brain)
+            if completed or not self.running:
+                return completed
+            self.emit(
+                type="status",
+                text="Sarvam realtime stream unavailable — trying the legacy stream",
+            )
+        return await self._sarvam_legacy_brain_loop(brain)
+
+    async def _sarvam_realtime_brain_loop(self, brain) -> bool:
+        """Current Saaras realtime protocol with true interims and provider VAD."""
+        from websockets.asyncio.client import connect as websocket_connect
+
+        api_key = os.environ.get("SARVAM_API_KEY", "")
+        if not api_key:
+            return False
+        query = urlencode(
+            {
+                "language_code": self.args.sarvam_language,
+                "stream_type": "fast",
+                "endpointing": "vad",
+                "encoding": "linear16",
+                "sample_rate": 16000,
+                "model": "saaras:v3-realtime",
+                "mode": self.args.sarvam_mode,
+                "return_timestamps": "false",
+                "prefix_padding_ms": 200,
+                "silence_duration_ms": self.args.sarvam_silence_ms,
+                "min_speech_duration_ms": 100,
+            }
+        )
+        url = f"wss://api.sarvam.ai/speech-to-text-realtime/ws?{query}"
+        history: list[tuple[str, str]] = []
+        capture_records = deque()
+        pending_capture_text = deque()
+        failures = 0
+
+        while self.running and failures < 3:
+            try:
+                async with websocket_connect(
+                    url,
+                    additional_headers={"API-SUBSCRIPTION-KEY": api_key},
+                ) as socket:
+                    failures = 0
+                    self.emit(
+                        type="asr_state",
+                        state="ready",
+                        model="sarvam-saaras-v3-realtime",
+                        vad="sarvam-realtime-vad",
+                    )
+                    audio_buffer = bytearray()
+                    latest_partial = {"text": "", "changed_at": 0.0, "speech": False}
+                    last_speech_end = {"at": None}
+
+                    async def sender() -> None:
+                        while self.running:
+                            try:
+                                pcm = await asyncio.to_thread(self.tap_q.get, True, 0.5)
+                            except queue.Empty:
+                                continue
+                            if self.capture is not None:
+                                record = self.capture.add_frame(pcm)
+                                if record is not None:
+                                    if pending_capture_text:
+                                        self._attach_capture(record, pending_capture_text.popleft())
+                                    else:
+                                        capture_records.append(record)
+                            audio16 = to_whisper_rate(pcm)
+                            pcm16 = (np.clip(audio16, -1, 1) * 32767).astype(np.int16)
+                            audio_buffer.extend(pcm16.tobytes())
+                            # Upstream specifies a fixed 50 ms client cadence.
+                            while len(audio_buffer) >= 1600:
+                                chunk = bytes(audio_buffer[:1600])
+                                del audio_buffer[:1600]
+                                await socket.send(
+                                    json.dumps(
+                                        {
+                                            "event": "audio_input",
+                                            "audio": base64.b64encode(chunk).decode(),
+                                        }
+                                    )
+                                )
+
+                    async def receiver() -> None:
+                        async for raw_message in socket:
+                            if not isinstance(raw_message, str):
+                                continue
+                            message = json.loads(raw_message)
+                            event = message.get("event")
+                            now = time.monotonic()
+                            if event == "vad.speech_start":
+                                latest_partial.update(text="", changed_at=now, speech=True)
+                                self.handle_speech_start()
+                                self.emit(type="asr_state", state="listening", speech=True, streaming=True)
+                            elif event == "vad.speech_end":
+                                latest_partial["speech"] = False
+                                last_speech_end["at"] = now
+                                self._start_speculative_reasoning(latest_partial["text"], history, brain)
+                                self.emit(type="asr_state", state="endpoint", streaming=True)
+                            elif event == "transcript.partial":
+                                text = str(message.get("text") or "").strip()
+                                if text and text != latest_partial["text"]:
+                                    latest_partial.update(text=text, changed_at=now)
+                                    self.emit(type="asr_state", state="partial", text=text, streaming=True)
+                            elif event == "transcript.final":
+                                text = str(message.get("text") or "").strip()
+                                end_at = last_speech_end["at"] or now
+                                record = capture_records.popleft() if capture_records else None
+                                if self.capture is not None and record is None:
+                                    pending_capture_text.append(text)
+                                self._accept_transcript(
+                                    text,
+                                    (now - end_at) * 1000,
+                                    history,
+                                    brain,
+                                    record,
+                                )
+                                latest_partial.update(text="", changed_at=0.0, speech=False)
+                            elif event == "error":
+                                raise RuntimeError(f"Sarvam realtime STT error: {message}")
+                            elif event == "session.end":
+                                return
+
+                    async def coordinator() -> None:
+                        while self.running:
+                            now = time.monotonic()
+                            partial = latest_partial["text"]
+                            if (
+                                latest_partial["speech"]
+                                and partial
+                                and now - latest_partial["changed_at"] >= 0.12
+                            ):
+                                self._start_speculative_reasoning(partial, history, brain)
+                            self._poll_brain(brain, history)
+                            self._poll_actions(history)
+                            await asyncio.sleep(0.03)
+
+                    tasks = [
+                        asyncio.create_task(sender()),
+                        asyncio.create_task(receiver()),
+                        asyncio.create_task(coordinator()),
+                    ]
+                    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    for task in done:
+                        task.result()
+                    if not self.running:
+                        return True
+            except Exception as e:
+                failures += 1
+                self.emit(
+                    type="status",
+                    text=f"Sarvam realtime stream disconnected ({type(e).__name__}); reconnecting {failures}/3",
+                )
+                await asyncio.sleep(min(0.5 * 2 ** (failures - 1), 2.0))
+        return not self.running
+
+    async def _sarvam_legacy_brain_loop(self, brain) -> bool:
+        """Persistent streaming ASR with provider-independent turn assembly.
+
+        Returns True after a normal session lifetime.  False means the stream
+        failed repeatedly and the caller should start the local fallback.
+        """
+        from sarvamai import AsyncSarvamAI
+
+        api_key = os.environ.get("SARVAM_API_KEY", "")
+        if not api_key:
+            self.emit(type="status", text="SARVAM_API_KEY missing — cannot start streaming ASR")
+            return False
+
+        history: list[tuple[str, str]] = []
+        assembler = TurnAssembler(continuation_grace_s=self.args.turn_grace_ms / 1000)
+        capture_records = deque()
+        pending_capture_text = deque()
+        failures = 0
+
+        while self.running and failures < 3:
+            client = AsyncSarvamAI(api_subscription_key=api_key)
+            try:
+                async with client.speech_to_text_streaming.connect(
+                    model="saaras:v3",
+                    mode=self.args.sarvam_mode,
+                    language_code=self.args.sarvam_language,
+                    sample_rate="16000",
+                    input_audio_codec="pcm_s16le",
+                    high_vad_sensitivity="false",
+                    vad_signals="true",
+                    flush_signal="true",
+                ) as socket:
+                    failures = 0
+                    assembler.reset()
+                    self.emit(type="asr_state", state="ready", model="sarvam-saaras-v3", vad="sarvam-vad")
+                    last_speech_end = {"at": None}
+
+                    async def sender() -> None:
+                        while self.running:
+                            try:
+                                pcm = await asyncio.to_thread(self.tap_q.get, True, 0.5)
+                            except queue.Empty:
+                                continue
+                            if self.capture is not None:
+                                record = self.capture.add_frame(pcm)
+                                if record is not None:
+                                    if pending_capture_text:
+                                        self._attach_capture(record, pending_capture_text.popleft())
+                                    else:
+                                        capture_records.append(record)
+                            audio16 = to_whisper_rate(pcm)
+                            pcm16 = (np.clip(audio16, -1, 1) * 32767).astype(np.int16)
+                            encoded = base64.b64encode(pcm16.tobytes()).decode()
+                            # The SDK's AudioData schema still says audio/wav, while the
+                            # connection-level codec correctly declares this payload as raw PCM.
+                            await socket.transcribe(audio=encoded, encoding="audio/wav", sample_rate=16_000)
+
+                    async def receiver() -> None:
+                        while self.running:
+                            message = await socket.recv()
+                            now = time.monotonic()
+                            if message.type == "events":
+                                signal = str(message.data.signal_type).upper()
+                                if signal.endswith("START_SPEECH"):
+                                    self.handle_speech_start()
+                                    assembler.speech_started()
+                                    self.emit(type="asr_state", state="listening", speech=True, streaming=True)
+                                elif signal.endswith("END_SPEECH"):
+                                    assembler.speech_ended(now)
+                                    last_speech_end["at"] = now
+                                    self.emit(type="asr_state", state="endpoint", streaming=True)
+                            elif message.type == "data":
+                                text = str(message.data.transcript).strip()
+                                if (
+                                    self.agent_speaking.is_set()
+                                    and meaningful_text(text)
+                                    and persona.should_interrupt(text, self.current_speech_text)
+                                ):
+                                    self.interrupt_playback(text)
+                                assembler.add_transcript(text, now)
+                                self.emit(type="asr_state", state="partial", text=text, streaming=True)
+
+                    async def finalizer() -> None:
+                        while self.running:
+                            now = time.monotonic()
+                            text = assembler.poll(now)
+                            if text:
+                                end_at = last_speech_end["at"] or now
+                                latency_ms = (now - end_at) * 1000
+                                record = capture_records.popleft() if capture_records else None
+                                if self.capture is not None and record is None:
+                                    pending_capture_text.append(text)
+                                self._accept_transcript(text, latency_ms, history, brain, record)
+                            self._poll_brain(brain, history)
+                            self._poll_actions(history)
+                            await asyncio.sleep(0.03)
+
+                    tasks = [
+                        asyncio.create_task(sender()),
+                        asyncio.create_task(receiver()),
+                        asyncio.create_task(finalizer()),
+                    ]
+                    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    for task in done:
+                        task.result()
+                    if not self.running:
+                        return True
+            except Exception as e:
+                failures += 1
+                self.emit(
+                    type="status",
+                    text=f"Sarvam stream disconnected ({type(e).__name__}); reconnecting {failures}/3",
+                )
+                await asyncio.sleep(min(0.5 * 2 ** (failures - 1), 2.0))
+        return not self.running
 
 
 active: dict = {"session": None}
@@ -296,10 +1261,23 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
     try:
         async for msg in ws:
             if msg.type == WSMsgType.BINARY and len(msg.data) == FRAME * 4:
-                try:
-                    session.mic_q.put_nowait(np.frombuffer(msg.data, np.float32).copy())
-                except queue.Full:
-                    pass
+                pcm = np.frombuffer(msg.data, np.float32).copy()
+                if session.args.voice_stack == "moshi":
+                    try:
+                        session.mic_q.put_nowait(pcm)
+                    except queue.Full:
+                        pass
+                # In controlled barge-in mode browser AEC plus meaningful partial
+                # ASR is the interruption gate. The default retains the stronger
+                # half-duplex correctness boundary.
+                admit_mic = session.args.barge_in or (
+                    not session.agent_speaking.is_set() and time.monotonic() >= session.listen_after
+                )
+                if admit_mic:
+                    try:
+                        session.tap_q.put_nowait(pcm)
+                    except queue.Full:
+                        pass
             elif msg.type == WSMsgType.TEXT:
                 # The one control message the browser sends us (everything else on this socket
                 # is server → browser JSON events): the "record this session" toggle. Ignore
@@ -310,6 +1288,8 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                     continue
                 if ctrl.get("type") == "control" and ctrl.get("capture"):
                     session.enable_capture()
+                elif ctrl.get("type") == "tutor_grade":
+                    session.grade_tutor(str(ctrl.get("verdict", "")))
             elif msg.type == WSMsgType.ERROR:
                 break
     finally:
@@ -349,6 +1329,39 @@ async def corrections_handler(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "applied": applied, "unknown": unknown})
 
 
+async def hermes_review_handler(request: web.Request) -> web.Response:
+    """Persist a completed score only after the learner confirms it in the UI."""
+    try:
+        body = await request.json()
+    except (ValueError, TypeError) as e:
+        return web.json_response({"ok": False, "error": f"invalid JSON body: {e}"}, status=400)
+    tutor = TUTORS.get(body.get("session_id"))
+    if tutor is None:
+        return web.json_response({"ok": False, "error": "unknown tutor session"}, status=404)
+    if body.get("confirm") is not True:
+        return web.json_response({"ok": False, "error": "explicit confirmation is required"}, status=400)
+    try:
+        data = await asyncio.to_thread(record_review, tutor)
+    except HermesError as e:
+        return web.json_response({"ok": False, "error": str(e)}, status=400)
+    return web.json_response({"ok": True, "review": data, "slug": tutor.deck.slug})
+
+
+async def health_handler(request: web.Request) -> web.Response:
+    args = request.app["args"]
+    return web.json_response(
+        {
+            "ok": True,
+            "mode": args.mode,
+            "voice_stack": args.voice_stack,
+            "asr": args.asr,
+            "tts": args.tts_backend,
+            "barge_in": args.barge_in,
+            "session_active": active["session"] is not None,
+        }
+    )
+
+
 def main() -> None:
     load_repo_env()
     ap = argparse.ArgumentParser()
@@ -359,15 +1372,65 @@ def main() -> None:
     ap.add_argument("--steps", type=int, default=4000)
     ap.add_argument("--temp", type=float, default=0.8, help="audio sampling temperature (0.6 = cleaner/flatter)")
     ap.add_argument("--port", type=int, default=8990)
+    ap.add_argument("--voice-stack", choices=["open", "moshi", "none"], default="open",
+                    help="open is the reliable local VAD/ASR/TTS cascade; moshi keeps the experimental "
+                         "full-duplex model; none runs transcript/capture only")
     ap.add_argument("--no-model", action="store_true",
-                     help="skip loading Moshi entirely — ASR/brain/capture only. For developing/testing "
-                          "the capture feature without a GPU-heavy model load (never run Moshi and this "
-                          "flag at once from the same invocation; see docs/DECISIONS.md 0008 on contention).")
+                     help="deprecated alias for --voice-stack none")
     ap.add_argument("--capture", action="store_true",
                      help="opt-in session recording, ON for every session from server start (off by "
                           "default). The web UI also has a per-session toggle for the same thing.")
+    ap.add_argument("--asr-min-rms", type=float, default=float(os.environ.get("ASR_MIN_RMS", "0.003")),
+                    help="minimum adaptive speech threshold (old fixed value was 0.015 and rejected quiet voices)")
+    default_asr = os.environ.get("ASR_ENGINE", "sarvam" if os.environ.get("SARVAM_API_KEY") else "parakeet")
+    default_tts = os.environ.get("TTS_BACKEND", "sarvam-ws" if os.environ.get("SARVAM_API_KEY") else "piper")
+    ap.add_argument("--asr", default=default_asr,
+                    help="recognizer: sarvam (streaming default when configured), parakeet[:HF repo], or whisper[:model]")
+    ap.add_argument("--asr-model", default=None,
+                    help="deprecated faster-whisper shortcut; e.g. --asr-model small.en means --asr whisper:small.en")
+    ap.add_argument("--vad-threshold", type=float, default=float(os.environ.get("VAD_THRESHOLD", "0.55")),
+                    help="Silero speech probability threshold")
+    ap.add_argument("--vad-min-speech-ms", type=int, default=int(os.environ.get("VAD_MIN_SPEECH_MS", "160")),
+                    help="reject candidate windows with less neural-VAD speech than this")
+    ap.add_argument("--turn-grace-ms", type=int, default=int(os.environ.get("TURN_GRACE_MS", "450")),
+                    help="merge resumed Sarvam speech segments into one thought within this window")
+    ap.add_argument("--barge-in", action="store_true",
+                    help="controlled duplex: keep streaming ASR active during TTS and cancel playback "
+                         "after a meaningful partial transcript (best with headphones)")
+    ap.add_argument("--sarvam-language", default=os.environ.get("SARVAM_LANGUAGE", "en-IN"),
+                    help="BCP-47 input/output language for Sarvam speech")
+    ap.add_argument("--sarvam-mode", choices=["transcribe", "verbatim", "codemix"],
+                    default=os.environ.get("SARVAM_MODE", "transcribe"),
+                    help="Saaras v3 output mode")
+    ap.add_argument("--sarvam-stt", choices=["realtime", "legacy"],
+                    default=os.environ.get("SARVAM_STT", "realtime"),
+                    help="realtime has true interim transcripts and immediate VAD events; legacy is fallback")
+    ap.add_argument("--sarvam-silence-ms", type=int,
+                    default=int(os.environ.get("SARVAM_SILENCE_MS", "220")),
+                    help="provider end-of-turn silence in milliseconds (default 220)")
+    ap.add_argument("--tts-backend", choices=["sarvam-ws", "sarvam", "piper", "kokoro"], default=default_tts,
+                    help="persistent Sarvam WebSocket (recommended), legacy Sarvam HTTP, "
+                         "stable local Piper, or experimental local Kokoro")
+    ap.add_argument("--mode", choices=["sdr", "hermes"], default="sdr",
+                    help="SDR demo, or spoken recall over an approved Hermes learning run")
+    ap.add_argument("--hermes-root", type=Path,
+                    default=Path(os.environ.get("HERMES_BRAIN_PATH", default_hermes_root())),
+                    help="path to the hermes-brain checkout (default: sibling repo or HERMES_BRAIN_PATH)")
+    ap.add_argument("--hermes-run", default=None,
+                    help="approved Hermes run slug; default selects the oldest due review")
+    ap.add_argument("--hermes-remote-grading", action="store_true",
+                    help="send the private study material and spoken answers to Gemini for automatic grading; "
+                         "without this flag Hermes mode uses local human self-grading")
     args = ap.parse_args()
-    if args.hf_repo is None and not args.no_model:
+    if args.no_model:
+        args.voice_stack = "none"
+    if args.asr_model:
+        args.asr = f"whisper:{args.asr_model}"
+    if args.hermes_remote_grading and args.mode != "hermes":
+        ap.error("--hermes-remote-grading requires --mode hermes")
+    if args.barge_in and (args.voice_stack != "open" or args.asr != "sarvam"):
+        ap.error("--barge-in currently requires --voice-stack open --asr sarvam")
+    if args.hf_repo is None and args.voice_stack == "moshi":
         from duet_agent import local_loop  # deferred — see the import note near FRAME above
         args.hf_repo = local_loop.DEFAULT_REPOS[args.quantized]
 
@@ -375,10 +1438,20 @@ def main() -> None:
     app["args"] = args
     app.router.add_get("/ws", ws_handler)
     app.router.add_post("/corrections", corrections_handler)
+    app.router.add_post("/hermes/review", hermes_review_handler)
+    app.router.add_get("/healthz", health_handler)
     app.router.add_get("/", lambda r: web.FileResponse(STATIC / "index.html"))
     app.router.add_static("/static", STATIC)
-    mode = "NO-MODEL (ASR/brain/capture only)" if args.no_model else f"model: {args.hf_repo}"
-    print(f"Duet web demo → http://localhost:{args.port}  ({mode}, capture default {'ON' if args.capture else 'off'})")
+    if args.voice_stack == "open":
+        detector = "Sarvam streaming VAD" if args.asr == "sarvam" else "Silero"
+        duplex = " + controlled barge-in" if args.barge_in else ""
+        voice = f"voice: {detector} + {args.asr} ASR + {args.tts_backend} TTS{duplex}"
+    elif args.voice_stack == "none":
+        voice = "NO VOICE (ASR/brain/capture only)"
+    else:
+        voice = f"experimental Moshi: {args.hf_repo}"
+    product = "Hermes spoken recall" if args.mode == "hermes" else "SDR demo"
+    print(f"Duet web demo → http://localhost:{args.port}  ({product}; {voice}, capture default {'ON' if args.capture else 'off'})")
     web.run_app(app, port=args.port, print=None)
 
 

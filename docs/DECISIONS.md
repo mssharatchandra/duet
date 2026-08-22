@@ -407,9 +407,424 @@ contradicting the "deterministic" claim in `run_asr_eval.py`'s original header. 
 comparisons were therefore never strictly apples-to-apples; the agent's single-process combined run
 (all models on byte-identical audio) is the trustworthy one, and is what the table above reports.
 
-**Still open:** the real-microphone eval. Session capture now works end to end (0014 below) and the
+**Still open:** the real-microphone eval. Session capture now works end to end in the web demo and the
 first real utterance is recorded, but one utterance is not a benchmark.
 ---
+
+## 0014 — 2026-08-01 — Hermes Voice v0: canonical scheduler, self-grade default, explicit remote grade
+
+**Status:** Accepted and implemented locally. Human voice evaluation remains open.
+
+### Context
+
+The first differentiated product slice is spoken recall over `hermes-brain`, not another generic
+assistant. Two constraints shape the boundary: Hermes owns the approved learning artifacts and
+review schedule, and its default privacy is `private`. Duet must not fork the scheduler or silently
+upload private learning material merely because its existing SDR brain uses Gemini.
+
+### Decision
+
+Duet reads only Hermes runs with `approved` or `published` status, selects the oldest due run using
+the same `review.completed.data.due_at` event contract, and parses its numbered `recall.md` questions.
+The browser runs a deterministic question/score state machine. Local human self-grading is the
+default. `--hermes-remote-grading` is an explicit alternative that sends the reviewed article and
+spoken answers to Gemini and discloses that fact in the UI.
+
+A completed score is never written automatically. The learner presses **Record this review in
+Hermes**; Duet calls Hermes' canonical `python3 scripts/brain.py review` command, then reads the
+event log back and verifies the appended score. Partial answers count as incorrect because Hermes'
+current review contract accepts integer `correct` and `total` values.
+
+### Options considered
+
+| Option | Complexity | Privacy | Scheduler drift | Assessment |
+|---|---:|---:|---:|---|
+| Reimplement cards + schedule in Duet | medium | local | high | Rejected: creates a second brain |
+| Automatic Gemini grading by default | low | private data leaves Mac | low | Rejected: contradicts local-first framing |
+| Local self-grade + explicit Gemini opt-in | medium | local by default | low | **Chosen** |
+| Add a local grading LLM now | high | local | low | Deferred until measured self-grade friction justifies it |
+
+### Consequences
+
+- A useful vertical slice works without a new model or a schema change in the dirty Hermes worktree.
+- Hermes remains the durable source of truth and computes the next interval itself.
+- Automatic grading is available but cannot be mistaken for a private path.
+- Self-grading adds a button press after each spoken answer; whether that harms the experience is
+  an open human-eval question, not a hidden trade-off.
+- The current integration loads the reviewed article for remote grading; retrieval/chunking is
+  unnecessary at today's document sizes but must be revisited before long corpora.
+
+### Verification
+
+- Ruff passed across `agent`, `web-demo`, and `eval`.
+- Unit suite: **84 passed** (7 new Hermes/profile tests).
+- No-model server started against the real sibling Hermes checkout; WebSocket emitted the due
+  OAuth run with 7 questions, self-grading, and the local-first disclosure.
+- Real-model timed-silence smoke: the complete first OAuth question appeared in Moshi's inner
+  monologue and produced 85 non-silent audio frames. **Bad result preserved:** model-step p95 was
+  **147.1 ms against the 80 ms budget** on the currently busy desktop. This was not a controlled
+  benchmark and does not supersede the quiet-machine q4 result; it does prove the experience is
+  presently vulnerable to ordinary desktop contention. The UI now shows missed-frame rate in red
+  and emits a realtime-budget warning.
+- Not verified yet: one full human spoken review, subjective audibility/prosody of long questions,
+  or the final write button against the real Hermes event log (that remains user-triggered by design).
+
+## 0015 — 2026-08-01 — Live ASR failure: speech was discarded before Whisper
+
+**Trigger:** the first human Hermes Voice trial reported that essentially nothing spoken appeared
+in the transcript. This is a release blocker, not a minor WER regression.
+
+**Root cause 1 — fixed acoustic gate.** Live segmentation used a fixed RMS threshold of **0.015**.
+In the two captured real-mic clips, median frame RMS measured **0.01329** and **0.00396**; the quieter
+clip crossed the gate in only 5 of 14 frames. Most speech was therefore labeled silence or chopped
+before Whisper received it. The model could not transcribe audio it never saw.
+
+**Root cause 2 — startup coupling.** The WebSocket previously copied mic frames to ASR from inside
+the Moshi model loop. Speech during model loading was silently lost. The WebSocket now tees frames
+directly to the brain queue, independent of Moshi startup and realtime health.
+
+**Recognition finding — default changed provisionally.** On the one human-corrected real clip,
+ground truth “That's all,” `base.en` was exact while `small.en` produced “That's funny.” That single
+utterance is not a benchmark, but it is the only on-distribution labeled evidence, so the browser
+default moves **small.en → base.en provisionally**. This reverses 0013 only for the live browser;
+the augmented synthetic matrix still favors small.en under noise. Collect at least 20 corrected
+real utterances before making a durable model choice.
+
+**Fix:** one shared adaptive segmenter now calibrates 480 ms of room tone, uses
+`max(0.003, noise_floor × 1.8)`, accepts 160 ms short answers, and waits 640 ms of quiet to close.
+An attempted onset pre-roll was rejected after replay showed that even 80–240 ms of preceding room
+tone caused Whisper hallucinations on the short clip. The page now exposes calibration, live RMS,
+adaptive threshold, speech detection, transcription latency, and empty/error results. Beam search
+increased from 1 to 5 and previous-text conditioning remains off so one hallucination cannot poison
+the next utterance.
+
+**Verification:** 14 segmenter/capture tests pass, including quiet speech above a measured room
+floor and constant-noise rejection. The full suite is **86 passed**. A realistic WebSocket replay
+calibrated on the captured clip's actual room tone, detected the 1.12 s utterance, and returned the
+verified “That's all.” with `base.en` in **1,284 ms** without Moshi and **1,368 ms** while q4 Moshi
+loaded and ran concurrently. This verifies the repaired path, not general ASR quality. Accent,
+long-answer, crosstalk, and real human simultaneous-Moshi accuracy remain unmeasured.
+
+## 0016 — 2026-08-02 — Replace the default Moshi/Whisper demo with a guarded open voice cascade
+
+**Status:** Accepted and implemented locally. Human conversational evaluation remains open.
+
+### Context
+
+The second live trial was worse than a missed transcript: Duet displayed long, confident sentences
+the learner never spoke, including “Yeah. That's why it's so loud…” and repeated punctuation. It
+then responded to those inventions. A voice product that fabricates user speech is unsafe to grade,
+remember, or act on.
+
+Replaying the five captured windows separated two failures. Silero found **0 ms of speech** in three
+windows that Whisper had turned into text. It found 476 ms in the real “Hello” window, which
+Parakeet transcribed exactly in 90 ms in the existing environment. A fifth window contained 380 ms
+of apparent speech from speaker leakage; no recognizer can know from a mono waveform whether that
+voice came from the user or Duet. The transport must enforce that boundary.
+
+### Decision
+
+The browser's default voice path is now a local half-duplex cascade:
+
+`adaptive candidate window -> Silero VAD -> Parakeet TDT 0.6B via MLX -> reasoning -> Piper TTS`.
+
+Microphone frames are discarded from synthesis start until 250 ms after a 450 ms playback-drain
+period. Browser acoustic echo cancellation stays enabled, but correctness does not depend on it.
+Moshi remains behind `--voice-stack moshi` as an experiment; it is no longer the default product
+experience. Whisper remains a compatibility backend behind `--asr whisper:<model>` and is still
+preceded by Silero.
+
+The open voice runtime lives in `web-demo/.venv`. This isolation is required: `moshi-mlx==0.3.0`
+requires `huggingface-hub<0.29`, while `parakeet-mlx>=0.5` requires `huggingface-hub>=0.30.2`.
+Parakeet 0.5.2 also resolves an obsolete Python-incompatible Numba declaration, so the runtime pins
+the working Python 3.12 pair, Numba 0.66 / llvmlite 0.48.
+
+### Options considered
+
+| Option | Assessment |
+|---|---|
+| Keep tuning faster-whisper | Rejected: a language-model decoder can still complete admitted noise into words; it does not solve self-playback |
+| Sarvam Saaras/Bulbul | Strong future hosted option for Indian languages and code-mixing, but requires an API key and is not open model weights |
+| Bolna | Useful open orchestration for provider-backed phone agents; adopting it would not itself fix acoustic ownership |
+| Fish Speech | Capable TTS only, not ASR or orchestration; current weights use the Fish Audio Research License |
+| Pipecat | Best future open orchestration candidate; deferred because replacing transport and Hermes session state simultaneously adds migration risk |
+| Silero + Parakeet MLX + Piper in existing Duet transport | **Chosen:** local, measured on this M5, minimal migration, explicit acoustic boundary |
+
+Piper is the stable TTS default. Kokoro generated 2.08 seconds of audio in 0.60 seconds, but the
+current Torch/native combination exited with signal 138 during teardown; successful synthesis does
+not make a crashing runtime shippable.
+
+### Consequences
+
+- Duet cannot be interrupted while it speaks. This is an intentional reliability trade-off for v1;
+  barge-in returns only after echo ownership is measured and tested.
+- Non-speech now produces no transcript instead of a plausible invention.
+- ASR and TTS remain pluggable, so Sarvam or Pipecat can be evaluated without rewriting Hermes.
+- The open runtime downloads local model weights but sends no audio to an ASR/TTS vendor.
+- Capture remains opt-in and is still the source of on-distribution corrections.
+
+### Verification
+
+- Unit suite: **89 passed**; Ruff passed across the agent and web demo.
+- Dedicated runtime resolved and loaded Silero, Parakeet MLX, and Piper on Apple M5.
+- Captured failure replay: three Whisper hallucination windows rejected at 0 ms neural-VAD speech;
+  real “Hello” accepted and transcribed exactly.
+- Real WebSocket startup emitted the complete Hermes opening and 119 binary audio frames while ASR
+  reported `paused: Duet is speaking`.
+- End-to-end WebSocket replay after playback: room calibration -> 350 ms verified speech ->
+  `Hello.` -> Hermes `tutor_answer`, with 868 ms first-real-utterance ASR latency in the clean runtime.
+
+## 0017 — 2026-08-02 — Use Sarvam as the speech plane, not the interaction plane
+
+**Status:** Accepted and implemented locally. Human conversational evaluation remains open.
+
+### Context
+
+The guarded local cascade stopped the catastrophic Whisper hallucinations, but the next live trial
+still felt slow to release the user's turn and remained inaccurate. The product question was not
+just whether Sarvam could improve ASR and TTS. It was whether adopting a hosted speech provider
+would leave Duet with anything differentiated to build.
+
+Tests on captured user audio showed a real ASR gain: Parakeet returned “Okay, top something,” while
+Saaras v3 returned “Okay, talk something.” On a longer, less clear answer, Sarvam preserved roughly
+the same words but punctuated them more usefully. A flushed short streaming recognition arrived
+303 ms after flush. Bulbul v3 produced the first chunk of a 24 kHz streaming WAV in 496 ms, followed
+by incremental audio chunks.
+
+The same streaming test also exposed the provider boundary. During a real-time replay of a long
+answer, Sarvam emitted `END_SPEECH` at a natural thinking pause and `START_SPEECH` when the learner
+continued 200 ms later. Treating provider VAD as turn completion would make the tutor interrupt a
+thoughtful speaker even when the transcription itself is correct.
+
+### Decision
+
+Sarvam is the default **speech plane** when `SARVAM_API_KEY` is present: one persistent Saaras v3
+stream performs VAD and ASR, and Bulbul v3 streams tutor speech. Duet remains the **interaction
+plane**. Its provider-independent `TurnAssembler` merges acoustic fragments, waits through a short
+continuation grace period, and emits one conversational turn to Hermes. Existing playback ownership
+still blocks microphone ingestion while Duet speaks. The Silero + Parakeet MLX + Piper path remains
+the local fallback and can be selected explicitly.
+
+### Options considered
+
+| Option | Assessment |
+|---|---|
+| Let Sarvam own the complete agent | Rejected: good speech infrastructure does not provide Duet's Hermes grounding, memory, turn semantics, evaluation loop, or provider portability |
+| Put a Duet control layer above Sarvam and local engines | **Chosen:** buys current Indian-English speech quality while keeping the differentiated interaction state under our control |
+| Stay entirely local | Retained as the privacy/offline fallback; current captured evidence favors Sarvam on at least one real utterance |
+| Enable true simultaneous listening immediately | Deferred: interruption requires measured echo ownership and cancellation, not only a streaming ASR socket |
+
+### Consequences
+
+- When the key is configured, user audio leaves the Mac for Sarvam ASR and tutor text leaves the Mac
+  for Sarvam TTS. Hermes source articles and local grading state are not sent to Sarvam.
+- The current advertised Sarvam pricing is INR 30/hour for speech-to-text and INR 30/10,000 TTS
+  characters. Calls made during this validation cost only a small fraction of one rupee.
+- A provider VAD event is evidence about acoustics, never by itself proof of conversational intent.
+- The strongest product moat is above commodity ASR/TTS: personalized turn timing, safe barge-in,
+  grounded long-term learning memory, automatic correction/evaluation, and adaptive provider routing.
+- This build is a substantially better streaming half-duplex voice agent. It is not yet evidence of
+  a world-class full-duplex agent; that claim requires human evaluation and safe interruption.
+
+### Verification
+
+- Unit suite: **95 passed**; Ruff passed across the agent, web demo, and eval code.
+- A browser-protocol replay received two provider speech segments, displayed both streaming
+  fragments, and committed one assembled user turn 566 ms after the final segment.
+- The same replay produced exactly one Hermes `you`, `captured`, and `tutor_answer` event.
+- If the Sarvam stream fails repeatedly, the server reports the failure and falls back to the local
+  Parakeet path without changing Hermes session state.
+
+## 0018 — 2026-08-22 — Controlled barge-in for the talk; keep Dify off the audio path
+
+**Status:** Accepted for the local presentation demo; human acoustic testing remains open.
+
+The reliable cascade now has an opt-in `--barge-in` mode. Microphone audio continues to Sarvam
+while Bulbul speech plays. A meaningful streaming partial transcript cancels the active TTS
+iterator, queued server frames, queued responses, and the browser AudioWorklet buffer together.
+The guarded half-duplex behavior remains the default because browser acoustic echo cancellation is
+not a production correctness boundary. This is accurately described as a **controlled-duplex
+interruptible cascade**, not a native speech-to-speech duplex model. PersonaPlex remains the
+open-weight native-duplex research track.
+
+A real synthetic-caller WebSocket run verified the whole deployed path: accurate opening
+transcription, Gemini guidance in **1,120 ms**, Sarvam first audio in **468 ms**, and a second spoken
+utterance cancelled active playback. The test is preserved in `scripts/smoke-live-demo.py`; unit and
+flow tests total **110 passing**. Human testing with laptop-speaker echo and different accents is
+still required before making a reliability claim.
+
+Dify was evaluated as an optional workflow plane. Its visual workflows, RAG, tools, model routing,
+APIs, and LLMOps could help a later non-realtime agent backend. It is excluded from the latency
+critical speech loop because another service hop adds latency and obscures ownership of turn state.
+Its current license is Dify's Apache-derived Open Source License with additional conditions, not
+plain Apache 2.0, so embedding or redistributing it requires a separate license review.
+
+## 0019 — 2026-08-23 — Pivot the product demo to a consent-first ASBL Broadway concierge
+
+**Status:** Accepted for the demo and research programme. Production outbound activation remains
+blocked on ASBL legal/compliance, consent-source, telephony and CRM integration.
+
+The fictional Brewline SDR persona is replaced by **Aira**, a disclosed ASBL AI assistant for
+people who have already enquired about Broadway. This makes the experiment concrete and gives the
+engineering a real domain: high-consideration property education, interruption, objections,
+shared decisions and human handoff. Official ASBL pages and the supplied CEO keynote form the
+initial fact registry. Volatile claims—price, inventory, offers and payment terms—require an
+authorised advisor; investment returns, scarcity, approvals and delivery guarantees are forbidden.
+
+“Psychoanalysis” is explicitly rejected. The system records evidence-backed use case, priorities,
+broad budget fit, decision participants and timeline. It does not infer protected/sensitive traits,
+hidden emotion, personality, wealth or manipulability, and its readiness score is not represented
+as purchase probability.
+
+The architecture separates a deterministic fast policy brain from the probabilistic language
+brain. Disclosure, permission, opt-out, stale-response suppression and playback cancellation are
+code paths, not prompt requests. Gemini plans short grounded responses; Sarvam provides streaming
+ASR/TTS; Duet owns turn assembly and controlled barge-in. Persistent consent/DNC, registered
+commercial telephony, CRM memory, human takeover and retention enforcement are P0 before any real
+outbound deployment because current TRAI TCCCPR rules govern consent/preferences for commercial
+calls and identify real estate as a preference category.
+
+Verification at acceptance: 113 local unit/flow tests pass; a real-service WebSocket caller passed
+AI disclosure → permission → ASR → reasoning → TTS → spoken interruption. Fourteen ASBL reasoning
+scenarios scored 97.1%, including forbidden-return, fake-scarcity, legal-handoff, sensitive-trait and
+opt-out cases. One request hit a Gemini 429 and is now retried with backoff. This is credible demo
+evidence, not yet production or human-naturalness evidence.
+
+## 0020 — 2026-08-23 — Treat the first human trial as a failed naturalness eval
+
+**Status:** Corrective build implemented and automated; second human trial remains required.
+
+The first Aira trial was intelligible enough to expose product failures, but it was not a good
+conversation. The voice hurried sentence endings; acknowledgments were generic; “hmm”, “okay” and
+the fragment “actually” were committed as complete new turns; two asynchronous responses appeared
+back-to-back; the agent repeatedly redirected to a brochure or advisor; it repeated private foyers
+instead of developing a value argument; explicit family/timeline evidence disappeared from the
+readiness panel; “ASBL” was transcribed as “ASP”; and Aira claimed it would send, share or arrange
+actions despite having no CRM, calendar or messaging tool. These are release failures, not cosmetic
+preferences.
+
+The root causes crossed the full stack:
+
+- Bulbul was configured at pace **1.05** even though Sarvam defines 1.0 as natural, with a flat
+  temperature of **0.55**.
+- Acoustic endpointing treated listener continuers and reformulation markers as semantic turns.
+- Concurrent reasoning calls had no request generation, allowing an older result to speak after a
+  newer utterance.
+- The prompt made advisor handoff a universal safe answer and allowed an action claim with no tool.
+- Qualification signals represented only the latest model call instead of monotonic, quoted
+  conversation evidence.
+- The UI concatenated agent utterances and called model output “reasoning,” obscuring whether a
+  claim was grounded or executable.
+
+The corrective decision is to make humanity inspectable and testable. Aira now defaults to Priya
+at pace **0.94** and temperature **0.72**; punctuation and two short sentences supply breathing
+without unsupported SSML. Listener backchannels wait silently, reformulation markers receive a
+2.1-second continuation window, and likely speaker echo does not trigger barge-in. Every reasoning
+request has a generation ID; stale results are dropped. Explicit evidence accumulates across turns.
+Unsupported CRM actions are blocked, repetition triggers a transparent conversational reset, and
+sensitive profiling and opt-out remain deterministic code paths. Domain normalization corrects the
+narrow “ASP” → “ASBL” error while preserving the raw ASR hypothesis for evaluation.
+
+The interface now shows a safe decision trace—heard utterance, stage, intent, response strategy,
+next action, exact customer evidence, fact IDs with source/freshness, capability-policy result, and
+ASR/reasoning/TTS timings. It does **not** expose hidden chain-of-thought; private deliberation is
+neither required for auditability nor appropriate to reveal.
+
+Verification after the corrective build: **125 tests passed**; Ruff passed; the real-service
+controlled-duplex smoke test passed disclosure → streaming ASR → permission → Gemini → first TTS
+audio → spoken interruption → cancellation in **10.5 seconds** end to end for the scripted sequence.
+The expanded 17-scenario live reasoning eval passed **141/144 checks (97.9%)**, with average model
+latency **1,745 ms**, approximately **$0.00473** total list-price cost. The remaining three raw-model
+misses were one wording-only 3.5-BHK matcher and two cases (sensitive profiling and opt-out) that the
+product correctly handles before the model. This proves the safeguards run; it does not prove the
+new voice is human. A second blind acoustic trial is the next acceptance gate.
+
+## 0021 — 2026-08-23 — Replace the waterfall fiction with concurrent lanes and capability-backed actions
+
+**Status:** Implemented locally; internal ASBL gateway and broader latency sample remain open.
+
+The five numbered UI stages implied that Duet deliberately waited for each whole component before
+starting the next. That was partly a visualization bug and partly a real implementation limitation.
+Streaming ASR, barge-in listening, deterministic policy, playback and asynchronous actions already
+run concurrently. However, rich reasoning starts only after a committed turn, Gemini returns one
+complete JSON object, and Sarvam TTS starts only after that object arrives. All five stages cannot be
+made simultaneous because response intent depends on enough user evidence and speech depends on
+enough verified response content. The design now exposes those two causal gates instead of calling
+the entire path parallel.
+
+The UI now shows six unnumbered runtime lanes: continuous listening, streaming turn assembly,
+asynchronous reasoning, concurrent guards, streaming speech and asynchronous actions. The local
+demo has a real idempotent action adapter: brochure, callback, site-visit and CRM requests are
+written to an ignored JSONL ledger and reported only as **recorded/accepted**. A configured internal
+gateway receives the same allowlisted action contract and may return `accepted` or `completed`.
+Only the latter unlocks a “done” claim. This is not a restriction on ASBL's product integration; it
+is the contract that prevents a model from confusing an intention with a completed business action.
+
+Three real Sarvam→Gemini→Sarvam smoke runs measured end-of-final-speech to first audio at **2,691,
+2,715 and 2,898 ms** (median **2,715 ms**). Median components were 623 ms turn assembly, 1,739 ms
+commit-to-brain-result and 443 ms TTS first audio. This is slower than vendor-published targets from
+leading voice-agent platforms. It is now documented as a failed latency gate, not hidden behind the
+phrase “full duplex.” `docs/LATENCY_ARCHITECTURE.md` records definitions, sources and the plan to
+reach 650–900 ms median by confidence-aware endpointing, speculative retrieval, a streaming
+speakable-clause contract and persistent TTS WebSocket synthesis.
+
+Verification: Ruff passed; **131 tests passed**; the real-service smoke test still passed disclosure,
+permission, streaming ASR, Gemini reasoning, first TTS audio and spoken cancellation after the
+refactor. The updated 17-scenario live reasoning eval passed **132/136 checks (97.1%)**; its combined
+brochure-and-callback request emitted both allowlisted actions, and the final opt-out model call hit
+a 429 (the product's deterministic opt-out path does not call the model). The three measurement
+calls and eval cost a trivial fraction of the $20 approval threshold.
+
+## 0022 — 2026-08-23 — Realtime interims, speculative commit, persistent TTS and honest local-model gate
+
+**Status:** Implemented and verified locally; 300–400 ms rich-response claim rejected by measurement.
+
+The trial exposed two state bugs rather than a mere voice-style problem. The legacy Saaras stream
+did not provide true interim words, so acoustic interruption arrived late. More seriously, closing
+Duet's frame iterator did not close the underlying TTS iterator; an interrupted Sarvam generator
+kept its serialization lock and the next response could hang indefinitely. Duet now uses Sarvam's
+`saaras:v3-realtime` WebSocket by default, consumes provider VAD plus true partial/final events on a
+50 ms input cadence, cancels playback on speech-start, and propagates cancellation through every
+iterator. An aborted TTS socket is forcibly discarded so unread audio cannot cross turns.
+
+Reasoning begins on a partial only after it remains unchanged for 120 ms and contains at least four
+words. The result is quarantined until the final transcript preserves its meaning; changed finals
+discard the speculative request. Gemini now uses `streamGenerateContent`. A complete
+`talking_point` may enter TTS before slower audit metadata finishes, but only after the normal claim,
+repetition, staleness and transactional-action gates. Raw token fragments and private reasoning are
+never spoken. Tool-like utterances wait for the real action adapter result.
+
+Bulbul v3 now uses a pre-warmed, persistent WebSocket with Simran at pace 1.04. A real two-turn
+probe measured warm provider first audio at **223 ms**; cold connection setup was **618 ms** and is
+now paid before the opening. The browser jitter buffer was reduced from 320 to 160 ms. Aira's exact
+failed trial language is covered deterministically: “I changed my mind” asks whether the caller
+wants to stop or change a preference, while “I don't want to listen” latches opt-out and suppresses
+all later reasoning and action confirmations.
+
+Local replacement was measured rather than assumed. Qwen3.5-4B MLX 4-bit produced a relevant
+sentence at **1,623 ms TTFT** and 38.5 tokens/s—too slow to beat Gemini here. Qwen3.5-0.8B with
+thinking disabled reached **153 ms TTFT / 228 ms total**, but invented “family entertainment” and
+“cultural heritage” outside its supplied facts. It fails the grounding bar and is not the sales
+brain; deterministic code is already a faster and safer intent/policy router.
+
+Two full real-service probes after the change measured server-side final-speech-end to first TTS
+audio at **1,622 ms** and **2,614 ms**. The variance is mostly Gemini and whether a stable partial
+was available early enough. Caller-audio-start to playback cancellation measured **349 ms** in the
+concurrent smoke harness. These numbers are progress, not evidence for a 300–400 ms rich-answer
+claim: the 220 ms endpointer plus roughly 223–470 ms TTS already consumes most or all of that budget
+before semantic reasoning and browser playout. The defensible next target is 650–900 ms median for
+eligible turns, with p95, factuality and false-interruption rate reported together.
+
+Verification: Ruff passed; **145 tests passed**; the real-service smoke test passed disclosure,
+permission, realtime partial/final ASR, speculative Gemini, persistent TTS, browser/server
+cancellation and post-interruption recovery. No cloud infrastructure was created and usage remained
+a trivial fraction of the $20 approval threshold.
+
+Primary references: [Sarvam realtime STT](https://docs.sarvam.ai/api/api-guides-tutorials/speech-to-text/which-api-to-use),
+[Sarvam streaming TTS](https://docs.sarvam.ai/api/api-guides-tutorials/text-to-speech/streaming-api/web-socket),
+[Gemini structured streaming](https://ai.google.dev/gemini-api/docs/generate-content/structured-output),
+[MLX-LM streaming generation](https://github.com/ml-explore/mlx-lm), and
+[Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B).
 
 ## Running spend
 

@@ -18,8 +18,8 @@ def _response(payload: dict, fenced: bool = False, tokens=(100, 40)) -> dict:
 GOOD = {
     "intent": "objection",
     "objection_type": "price",
-    "talking_point": "It's ninety-nine a month and the trial is free.",
-    "lead_signals": {"budget": "weak", "authority": "strong", "need": "strong", "timeline": "none"},
+    "talking_point": "That budget matters; an ASBL advisor can confirm the current price precisely.",
+    "lead_signals": {"budget_fit": "weak", "decision_role": "strong", "use_case": "strong", "timeline": "none"},
 }
 
 
@@ -32,7 +32,7 @@ def test_parse_guidance_happy_path():
 
 def test_parse_guidance_strips_markdown_fences():
     g = reasoning.parse_guidance(_response(GOOD, fenced=True))
-    assert g.talking_point.startswith("It's ninety-nine")
+    assert g.talking_point.startswith("That budget")
 
 
 def test_parse_guidance_coerces_invalid_enums():
@@ -40,12 +40,59 @@ def test_parse_guidance_coerces_invalid_enums():
     g = reasoning.parse_guidance(_response(bad))
     assert g.intent == "other"
     assert g.objection_type is None
-    assert g.lead_signals == {"budget": "none", "authority": "none", "need": "none", "timeline": "none"}
+    assert g.lead_signals == {
+        "budget_fit": "none",
+        "decision_role": "none",
+        "use_case": "none",
+        "timeline": "none",
+    }
 
 
 def test_parse_guidance_rejects_empty_talking_point():
     with pytest.raises(Exception):
         reasoning.parse_guidance(_response(dict(GOOD, talking_point="  ")))
+
+
+def test_parse_guidance_exposes_safe_trace_and_allowlisted_sources():
+    payload = dict(
+        GOOD,
+        conversation_stage="objection",
+        response_strategy="handle_objection",
+        next_action="ask",
+        fact_ids=["price", "privacy", "not-a-fact", "price"],
+        decision_summary="Answer price concern with value and a current factual boundary",
+        lead_evidence={"use_case": "for my family", "timeline": "four or five years"},
+    )
+    guidance = reasoning.parse_guidance(_response(payload))
+    assert guidance.conversation_stage == "objection"
+    assert guidance.response_strategy == "handle_objection"
+    assert guidance.next_action == "ask"
+    assert guidance.fact_ids == ["price", "privacy"]
+    assert guidance.lead_evidence["use_case"] == "for my family"
+    assert len(guidance.decision_summary.split()) <= 14
+
+
+def test_parse_guidance_supports_multiple_allowlisted_tool_requests():
+    payload = dict(
+        GOOD,
+        next_action="tool",
+        tool_requests=[
+            {"name": "send_brochure", "arguments": {"channel": "WhatsApp"}},
+            {"name": "schedule_callback", "arguments": {"preferred_time": "tomorrow"}},
+            {"name": "invent_discount", "arguments": {}},
+        ],
+    )
+    guidance = reasoning.parse_guidance(_response(payload))
+    assert [action.name for action in guidance.tool_requests] == [
+        "send_brochure",
+        "schedule_callback",
+    ]
+    assert guidance.tool_request == guidance.tool_requests[0]
+
+
+def test_wait_strategy_may_return_no_spoken_pitch():
+    guidance = reasoning.parse_guidance(_response(dict(GOOD, talking_point="", response_strategy="wait")))
+    assert guidance.talking_point == ""
 
 
 def test_failure_path_is_graceful(monkeypatch):
@@ -74,3 +121,39 @@ def test_missing_key_fails_fast(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
         reasoning.ReasoningLayer()
+
+
+def test_custom_profile_reuses_transport_without_sdr_schema(monkeypatch):
+    seen = {}
+
+    def builder(history, utterance):
+        seen["builder"] = (history, utterance)
+        return "custom prompt"
+
+    def parser(response):
+        seen["response"] = response
+        return reasoning.Guidance("other", None, "profile result", {})
+
+    layer = reasoning.ReasoningLayer(
+        api_key="test-key",
+        system_prompt="custom system",
+        prompt_builder=builder,
+        response_parser=parser,
+    )
+    monkeypatch.setattr(layer, "_post", lambda prompt: {"prompt": prompt})
+
+    layer._call([("lead", "history")], "answer")
+
+    result = layer.results.get_nowait()
+    assert result.talking_point == "profile result"
+    assert seen["builder"] == ([("lead", "history")], "answer")
+    assert seen["response"] == {"prompt": "custom prompt"}
+
+
+def test_partial_json_parser_releases_only_a_complete_spoken_field():
+    partial = '{"intent":"question","talking_point":"Private foyers improve'
+    assert reasoning.extract_complete_json_string(partial, "talking_point") is None
+    complete = partial + ' family privacy.\\nWould that matter to you?","fact_ids":["privacy"]}'
+    assert reasoning.extract_complete_json_string(complete, "talking_point") == (
+        "Private foyers improve family privacy.\nWould that matter to you?"
+    )

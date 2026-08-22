@@ -10,13 +10,9 @@
 # testable without a server or a GPU (agent/tests/test_capture.py) and importable from
 # server.py's --no-model path without dragging the model stack in behind it.
 #
-# Segmentation mirrors server.py's Session._brain_loop EXACTLY — same thresholds, same 1920-
-# sample/80ms frame contract: >=0.3s of voiced audio (4 frames) then >=0.6s of quiet (8 frames)
-# closes an utterance. server.py feeds this class the identical frame stream, in the identical
-# order, that its own inline segmenter sees — so the two state machines close an utterance on the
-# exact same frame, which is how server.py pairs a captured utterance with the ASR hypothesis text
-# the brain loop produced for it (SessionCapture.add_frame() returns the closed record with an
-# empty asr_hypothesis; server.py fills it in via set_hypothesis() once faster-whisper returns).
+# Live ASR and capture both use UtteranceSegmenter below. They receive the identical frame stream,
+# so both instances close an utterance on the same frame; server.py can pair the captured WAV with
+# the hypothesis produced for it without separate alignment bookkeeping.
 
 from __future__ import annotations
 
@@ -24,6 +20,7 @@ import json
 import time
 import uuid
 import wave
+from collections import deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
@@ -36,11 +33,16 @@ FRAME_SIZE = 1_920  # 1920 samples / 24 kHz = 80 ms. Duplicated from duet_agent.
                      # module is not allowed to depend on (see header). Frame size is a stable contract,
                      # not an implementation detail, so the duplication is deliberate, not drift risk.
 
-# Same numbers, same reasoning, as Session._brain_loop in server.py: >=0.3s of speech (4 frames of
-# 80ms) then >=0.6s of silence (8 frames) closes an utterance. Keep these in sync with server.py if
-# either changes — that's the one place true duplication would silently desync the two segmenters.
-VOICED_RMS_THRESHOLD = 0.015
-VOICED_FRAMES_TO_COUNT = 4
+# A fixed 0.015 gate discarded most real laptop-mic speech before Whisper ever saw it: one verified
+# session had median frame RMS 0.00396 and only 5/14 frames crossed the old threshold. The adaptive
+# gate estimates the room floor from recent inactive frames and asks for a modest signal-over-noise
+# margin, while a minimum prevents a near-silent room from triggering on numerical noise.
+MIN_RMS_THRESHOLD = 0.003
+NOISE_MULTIPLIER = 1.8
+NOISE_WINDOW_FRAMES = 125  # 10 seconds at 80 ms/frame
+PRE_ROLL_FRAMES = 0        # real short-utterance replay: room-tone prefix caused Whisper hallucinations
+CALIBRATION_FRAMES = 6     # estimate 480 ms of room tone before accepting speech
+VOICED_FRAMES_TO_COUNT = 2 # accept short answers such as "yes" (~160 ms)
 QUIET_FRAMES_TO_END = 8
 
 
@@ -52,6 +54,98 @@ class UtteranceRecord:
     ground_truth: str | None
     duration_s: float
     timestamp: float
+
+
+class UtteranceSegmenter:
+    """Adaptive energy segmenter shared by live ASR and opt-in capture.
+
+    This is intentionally not called semantic turn detection. It only fixes the
+    acoustic bug where quiet speech never reached ASR; hesitations and semantic
+    completion still need a real end-of-turn model.
+    """
+
+    def __init__(
+        self,
+        min_rms_threshold: float = MIN_RMS_THRESHOLD,
+        noise_multiplier: float = NOISE_MULTIPLIER,
+        voiced_frames_to_count: int = VOICED_FRAMES_TO_COUNT,
+        quiet_frames_to_end: int = QUIET_FRAMES_TO_END,
+        pre_roll_frames: int = PRE_ROLL_FRAMES,
+        calibration_frames: int = CALIBRATION_FRAMES,
+    ):
+        self.min_rms_threshold = min_rms_threshold
+        self.noise_multiplier = noise_multiplier
+        self.voiced_frames_to_count = voiced_frames_to_count
+        self.quiet_frames_to_end = quiet_frames_to_end
+        self.calibration_frames = calibration_frames
+        self._noise_rms: deque[float] = deque(maxlen=NOISE_WINDOW_FRAMES)
+        self._pre_roll: deque[np.ndarray] = deque(maxlen=pre_roll_frames)
+        self._buf: list[np.ndarray] = []
+        self.voiced_frames = 0
+        self.quiet_frames = 0
+        self.active = False
+        self.last_rms = 0.0
+
+    @property
+    def noise_floor(self) -> float:
+        if not self._noise_rms:
+            return self.min_rms_threshold / self.noise_multiplier
+        # The low quartile stays representative even when the inactive window
+        # contains a few speech onsets or keyboard taps.
+        return float(np.percentile(np.fromiter(self._noise_rms, dtype=np.float32), 25))
+
+    @property
+    def threshold(self) -> float:
+        return max(self.min_rms_threshold, self.noise_floor * self.noise_multiplier)
+
+    @property
+    def calibrating(self) -> bool:
+        return not self.active and len(self._noise_rms) < self.calibration_frames
+
+    def add_frame(self, pcm: np.ndarray) -> np.ndarray | None:
+        if pcm.shape != (FRAME_SIZE,):
+            raise ValueError(f"expected one {FRAME_SIZE}-sample frame, got shape {pcm.shape}")
+        self.last_rms = float(np.sqrt(np.mean(np.square(pcm))))
+        if self.calibrating:
+            self._noise_rms.append(self.last_rms)
+            self._pre_roll.append(pcm.copy())
+            return None
+        is_voiced = self.last_rms >= self.threshold
+
+        if not self.active:
+            if not is_voiced:
+                self._noise_rms.append(self.last_rms)
+                self._pre_roll.append(pcm.copy())
+                return None
+            self.active = True
+            self._buf = [*self._pre_roll, pcm.copy()]
+            self._pre_roll.clear()
+            self.voiced_frames = 1
+            self.quiet_frames = 0
+            return None
+
+        self._buf.append(pcm.copy())
+        if is_voiced:
+            self.voiced_frames += 1
+            self.quiet_frames = 0
+            return None
+
+        self.quiet_frames += 1
+        if self.quiet_frames < self.quiet_frames_to_end:
+            return None
+
+        audio = np.concatenate(self._buf) if self.voiced_frames >= self.voiced_frames_to_count else None
+        # Reuse the tail silence as pre-roll/noise evidence for the next onset.
+        tail = self._buf[-self._pre_roll.maxlen:] if self._pre_roll.maxlen else []
+        for frame in tail:
+            rms = float(np.sqrt(np.mean(np.square(frame))))
+            self._noise_rms.append(rms)
+            self._pre_roll.append(frame)
+        self._buf = []
+        self.voiced_frames = 0
+        self.quiet_frames = 0
+        self.active = False
+        return audio
 
 
 class SessionCapture:
@@ -67,23 +161,25 @@ class SessionCapture:
         self,
         session_dir: Path | str,
         sample_rate: int = SAMPLE_RATE,
-        voiced_rms_threshold: float = VOICED_RMS_THRESHOLD,
+        min_rms_threshold: float = MIN_RMS_THRESHOLD,
+        noise_multiplier: float = NOISE_MULTIPLIER,
         voiced_frames_to_count: int = VOICED_FRAMES_TO_COUNT,
         quiet_frames_to_end: int = QUIET_FRAMES_TO_END,
+        calibration_frames: int = CALIBRATION_FRAMES,
         now: Callable[[], float] | None = None,
     ):
         self.session_dir = Path(session_dir)
         self.session_dir.mkdir(parents=True, exist_ok=True)
         self.jsonl_path = self.session_dir / "utterances.jsonl"
         self._sample_rate = sample_rate
-        self._rms_threshold = voiced_rms_threshold
-        self._voiced_needed = voiced_frames_to_count
-        self._quiet_needed = quiet_frames_to_end
+        self.segmenter = UtteranceSegmenter(
+            min_rms_threshold=min_rms_threshold,
+            noise_multiplier=noise_multiplier,
+            voiced_frames_to_count=voiced_frames_to_count,
+            quiet_frames_to_end=quiet_frames_to_end,
+            calibration_frames=calibration_frames,
+        )
         self._now = now or time.time
-
-        self._buf: list[np.ndarray] = []
-        self._voiced = 0
-        self._quiet = 0
         # In-memory index so set_hypothesis()/apply_correction() can patch a row without
         # re-parsing the file. Sessions are short (a demo call, not a call center), so this
         # stays small; if that stops being true, switch to an on-disk index first.
@@ -91,27 +187,10 @@ class SessionCapture:
         self._order: list[str] = []
 
     def add_frame(self, pcm: np.ndarray) -> UtteranceRecord | None:
-        if pcm.shape != (FRAME_SIZE,):
-            raise ValueError(f"expected one {FRAME_SIZE}-sample frame, got shape {pcm.shape}")
-        rms = float(np.sqrt(np.mean(np.square(pcm))))
-        if rms > self._rms_threshold:
-            self._voiced += 1
-            self._quiet = 0
-            self._buf.append(pcm.copy())
-            return None
-        if not self._buf:
-            return None  # quiet with nothing buffered yet — not inside an utterance
-        self._quiet += 1
-        self._buf.append(pcm.copy())
-        if self._quiet >= self._quiet_needed and self._voiced >= self._voiced_needed:
-            return self._flush()
-        if self._quiet >= self._quiet_needed:
-            self._buf, self._voiced, self._quiet = [], 0, 0  # too short to count as speech — discard
-        return None
+        audio = self.segmenter.add_frame(pcm)
+        return self._flush(audio) if audio is not None else None
 
-    def _flush(self) -> UtteranceRecord:
-        audio = np.concatenate(self._buf)
-        self._buf, self._voiced, self._quiet = [], 0, 0
+    def _flush(self, audio: np.ndarray) -> UtteranceRecord:
         utterance_id = uuid.uuid4().hex[:12]
         wav_path = self.session_dir / f"{utterance_id}.wav"
         _write_wav(wav_path, audio, self._sample_rate)

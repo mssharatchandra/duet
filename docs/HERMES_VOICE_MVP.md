@@ -1,6 +1,6 @@
-# Hermes Voice — the leapfrog MVP (proposed 2026-07-07)
+# Hermes Voice — the leapfrog MVP (v0 built 2026-08-01)
 
-**One line:** give hermes-brain a full-duplex voice — spoken recall drills and Socratic challenge
+**One line:** give hermes-brain a reliable local voice — spoken recall drills and Socratic challenge
 over the spaced-repetition schedule it already computes, running on hardware you already own, for
 ~$1/month instead of ~$90.
 
@@ -13,10 +13,10 @@ instead exploits three things nobody else has:
 1. **hermes-brain already has the content and the schedule.** `config/brain.json` defines
    `review_intervals_days: [1, 3, 7, 14, 30, 90]`; every `learning/<run>/` ships a `recall.md`.
    Today those prompts are read. There is no reason they can't be *spoken*.
-2. **Duet is full-duplex.** No flashcard app, tutor, or voice assistant on the market can be
-   interrupted mid-sentence or backchannel while you think. For *recall practice specifically*
-   that's not a gimmick: the tutor can cut in the moment you go wrong, and stay quiet while you
-   struggle for the answer — which is exactly when learning happens.
+2. **Duet is a voice-AI laboratory, not a wrapper around one vendor.** The first full-duplex
+   attempt failed human evaluation by hearing its own output and inventing user speech. The reliable
+   v0.1 is half-duplex; interruption and backchannels return only when measured acoustic ownership
+   makes them safe.
 3. **hermes-brain's own thesis invites it.** "Models and harnesses are replaceable executors.
    Markdown, JSON/JSONL, Git, and the schemas in this repository are the durable interface."
    A voice agent is simply one more harness. Nothing about the brain changes.
@@ -38,7 +38,7 @@ Hermes Voice, local-first:
 |---|---|
 | GPU (Apple M5 you already own) | **$0** — measured 48 ms/step, well inside the 80 ms budget |
 | Electricity (~15 h at ~40 W) | ~$0.10 |
-| Reasoning brain (Gemini Flash-Lite, measured $0.00035/call) | ~$0.60 |
+| Reasoning brain | $0 with self-grading; optional Gemini grading has not yet been costed on this tutor |
 | Tunnel (Cloudflare Tunnel / Tailscale free tier) | $0 |
 | **Total** | **≈ $1** |
 
@@ -49,27 +49,26 @@ whole engineering lesson here:
 > GPU at $0.40/hr costs **$292/month** — *worse than ElevenLabs* — because you talk to it 20
 > minutes a day and pay for 1,440. Scale-to-zero serverless fixes the bill but adds a 10–30 s cold
 > start that destroys the "instant" feel. Local-first on hardware you own beats both on cost *and*
-> latency, and wins privacy outright: your notes, calendar and half-formed thoughts never leave
-> the machine.
+> latency. Privacy depends on grading mode: self-grading stays local; explicit Gemini grading sends
+> the reviewed article and spoken answer to Google and the UI says so.
 
-Honest costs of that choice: the Mac must be awake and reachable; Moshi's voice is worse than
-ElevenLabs'; no phone number until we add telephony.
+Honest costs of that choice: the Mac must be awake and reachable; Piper's voice is less expressive
+than premium hosted TTS; v0.1 cannot be interrupted while speaking; no phone number until telephony.
 
-## MVP scope — buildable today
+## MVP scope
 
-Everything below reuses Duet's existing loop, injector, brain, web UI and telemetry. No new
-architecture.
+Everything below reuses Duet's Hermes adapter, brain, web UI and telemetry. The live voice boundary
+is now a guarded local cascade rather than Moshi's unguarded microphone loop.
 
-1. **Due-card loader** — read `learning/*/recall.md` + `review_intervals_days`, plus a review log
+1. ✅ **Due-card loader** — read `learning/*/recall.md` + the review event log
    (JSONL, written back to hermes-brain following its own schema conventions), and pick what's due.
-2. **Tutor persona** — swap `persona.py`'s SDR fact-sheet for the due card's content: ask the
-   question, wait, grade, follow up Socratically on weak answers. Same `Guidance` contract.
-3. **Spoken grading → written state** — the async brain scores your spoken answer against the
-   card's expected answer and appends a review record so the next interval schedules correctly.
-   Deterministic scheduling stays in Python (same split as the BANT rubric: judgment in the model,
-   arithmetic in code).
-4. **Reachable from your phone** — Cloudflare Tunnel over the existing web demo. Drill while walking.
-5. **Live cost meter** — the page shows $ spent this session next to "what ElevenLabs would have
+2. ✅ **Tutor session** — ask the approved run's numbered questions, reject overlapping answers,
+   support repeat/skip, and keep strict integer scoring deterministic.
+3. ✅ **Spoken review → written state, human-gated** — local self-grading is the default; optional
+   Gemini grading is explicit. The final button calls Hermes' canonical `brain.py review` command
+   and reads back the appended event. Partial answers count as incorrect in Hermes' integer score.
+4. ⬜ **Reachable from your phone** — Cloudflare Tunnel over the existing web demo. Drill while walking.
+5. ⬜ **Live cost meter** — the page shows $ spent this session next to "what ElevenLabs would have
    billed." Teaching instrument and build-in-public asset in one.
 
 **Explicitly out of scope for v1:** telephony, wake word, multi-user, voice cloning, cloud hosting.
@@ -91,6 +90,9 @@ are the same path.
 
 ## Status
 
-**PROPOSED — awaiting go.** Phase 1 is ~a day of work, $0 additional spend. hermes-brain is a
-separate private repo with its own `CLAUDE.md`/`AGENTS.md` conventions and schema gates; any
-writes there must follow its rules, so the loader/review-log design needs a read of those first.
+**V0 BUILT LOCALLY, NOT YET HUMAN-EVALUATED.** The loader, tutor state machine, browser UI,
+privacy split, confirmed Hermes review write, local ASR/TTS adapters, and hallucination filters are
+implemented and covered by 89 unit tests. The guarded WebSocket path spoke the real due OAuth
+question, paused ASR throughout playback, then transcribed the captured real “Hello” exactly and
+delivered it to the tutor. A complete fresh spoken review with a human learner still needs to run
+before experience claims.

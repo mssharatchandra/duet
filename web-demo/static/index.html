@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Duet — talk to it</title>
+<title>Aira — ASBL Broadway voice concierge</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --dim:#8b949e;
-          --you:#58a6ff; --duet:#3fb950; --brain:#d29922; --rec:#f85149; }
+  :root { --bg:#090d12; --panel:#121922; --panel2:#17212c; --line:#2b3948; --text:#edf4f8; --dim:#91a3b5;
+          --you:#71b7ff; --duet:#57d68d; --brain:#f0b85a; --rec:#ff6b6b; --violet:#b8a1ff; }
   * { box-sizing:border-box; margin:0; }
-  body { background:var(--bg); color:var(--text); font:15px/1.5 -apple-system,system-ui,sans-serif;
+  body { background:radial-gradient(circle at 50% -15%,#172c38 0,var(--bg) 42%); color:var(--text); font:15px/1.5 -apple-system,system-ui,sans-serif;
          min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:24px; }
   h1 { font-size:20px; margin-bottom:2px; } .sub { color:var(--dim); font-size:13px; margin-bottom:18px; }
   #stage { display:flex; gap:28px; align-items:center; margin:10px 0 16px; }
@@ -19,15 +19,56 @@
            font-size:16px; font-weight:600; cursor:pointer; }
   button:disabled { background:var(--line); color:var(--dim); cursor:default; }
   #status { color:var(--dim); font-size:13px; min-height:20px; margin-bottom:14px; text-align:center; }
-  #cols { display:flex; gap:14px; width:min(980px,100%); flex:1; }
+  #asrStatus { color:var(--dim); font-size:12px; min-height:18px; margin-top:-10px; margin-bottom:12px; text-align:center; }
+  #asrStatus.speech { color:var(--you); }
+  #asrStatus.working { color:var(--brain); }
+  #cols { display:grid; grid-template-columns:minmax(0,1fr) minmax(340px,1.15fr); gap:14px; width:min(1180px,100%); flex:1; }
   .col { flex:1; background:var(--panel); border:1px solid var(--line); border-radius:10px;
          padding:14px; min-height:280px; max-height:52vh; overflow-y:auto; }
   .col h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin-bottom:10px; }
   .msg { margin-bottom:10px; } .msg .who { font-size:11px; color:var(--dim); }
   .you-t { color:var(--you); } .duet-t { color:var(--duet); }
-  .chip { display:block; background:#2d2308; border:1px solid var(--brain); color:var(--brain);
-          border-radius:8px; padding:6px 10px; font-size:13px; margin-bottom:8px; }
+  .chip { display:block; background:#211d14; border:1px solid #6b532c; color:#f2ca86;
+          border-radius:10px; padding:9px 11px; font-size:13px; margin-bottom:8px; }
+  .trace { background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:10px; }
+  .trace-head { display:flex; justify-content:space-between; gap:8px; color:var(--brain); font-size:12px; margin-bottom:8px; }
+  .trace-row { display:grid; grid-template-columns:92px 1fr; gap:8px; padding:4px 0; font-size:12px; }
+  .trace-key { color:var(--dim); } .trace-value { color:var(--text); }
+  .fact { border-left:2px solid var(--violet); padding:5px 0 5px 9px; margin-top:5px; font-size:12px; }
+  .fact a { color:#c9baff; } .fact small { display:block; color:var(--dim); }
+  #profile { color:var(--dim); font-size:12px; border-bottom:1px solid var(--line); padding-bottom:10px; margin-bottom:10px; }
   #stats { color:var(--dim); font-size:12px; margin-top:12px; }
+  .runtime-head { width:min(1180px,100%); display:flex; justify-content:space-between; gap:12px;
+                  align-items:baseline; margin:0 0 7px; }
+  .runtime-head b { font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+  .runtime-head span { color:var(--dim); font-size:12px; }
+  #pipeline { width:min(1180px,100%); display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:0 0 7px; }
+  .pipe { background:#101821; border:1px solid var(--line); border-radius:9px; padding:8px 10px; min-height:53px; }
+  .pipe b { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
+  .pipe span { font-size:12px; color:var(--dim); }
+  .pipe.active { border-color:var(--brain); box-shadow:0 0 0 1px #f0b85a22 inset; }
+  .pipe.active b,.pipe.done b { color:var(--brain); } .pipe.done { border-color:#315b49; }
+  .causal-note { width:min(1180px,100%); color:#b7c6d5; font-size:12px; padding:7px 10px;
+                 border-left:2px solid var(--brain); background:#171a17; margin-bottom:10px; }
+  .disclosure { width:min(1180px,100%); color:var(--dim); font-size:12px; margin:0 0 12px; }
+  .disclosure a { color:#c9baff; }
+  @media (max-width:780px) { #cols { grid-template-columns:1fr; } #pipeline { grid-template-columns:repeat(2,1fr); } }
+
+  #tutorPanel { display:none; width:min(980px,100%); background:linear-gradient(135deg,#171d2a,#161b22);
+                border:1px solid #3b4d72; border-radius:12px; padding:16px; margin-bottom:14px; }
+  #tutorPanel.on { display:block; }
+  #tutorPanel h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:#9db8f5; }
+  #tutorTitle { font-size:18px; font-weight:650; margin:3px 0 8px; }
+  #tutorQuestion { font-size:16px; margin:10px 0; }
+  #tutorAnswer { color:var(--you); font-size:13px; margin:8px 0; }
+  #tutorPrivacy, #tutorProgress, #tutorSaveStatus { color:var(--dim); font-size:12px; }
+  #gradeControls { display:none; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  #gradeControls.on { display:flex; }
+  #gradeControls button, #recordReview { padding:7px 13px; border-radius:8px; font-size:13px; }
+  #gradeControls button[data-grade="partial"] { background:#d29922; color:#2e2100; }
+  #gradeControls button[data-grade="incorrect"], #gradeControls button[data-grade="skip"] { background:#f85149; color:#310606; }
+  #recordReview { display:none; margin-top:12px; background:#9db8f5; color:#10182a; }
+  #recordReview.on { display:inline-block; }
 
   /* -- session capture (opt-in ASR eval recording) -------------------------- */
   #captureRow { width:min(980px,100%); background:var(--panel); border:1px solid var(--line);
@@ -58,8 +99,8 @@
 </style>
 </head>
 <body>
-  <h1>Duet</h1>
-  <div class="sub">full-duplex voice agent · Moshi mouth + Gemini brain · everything runs on this machine except the brain</div>
+  <h1>Aira for ASBL Broadway</h1>
+  <div class="sub">empathetic AI property concierge · consent-first · interruptible · grounded in verified project facts</div>
 
   <div id="captureRow">
     <label for="captureCheckbox">
@@ -74,13 +115,47 @@
   <div id="stage">
     <div class="orb" id="orb-you">you</div>
     <button id="go">Start talking</button>
-    <div class="orb" id="orb-duet">duet</div>
+    <div class="orb" id="orb-duet">Aira</div>
   </div>
   <div id="status">click start — the model takes a few seconds to load</div>
+  <div id="asrStatus">transcriber idle</div>
+  <div id="latency">latency rail: waiting for a turn</div>
+  <div class="runtime-head"><b>Concurrent runtime lanes</b><span>not a five-step waterfall</span></div>
+  <div id="pipeline">
+    <div class="pipe" id="pipe-asr"><b>Listen · continuous</b><span>ASR stays live, including barge-in</span></div>
+    <div class="pipe" id="pipe-turn"><b>Turn · streaming</b><span>partials accumulate until intent is stable</span></div>
+    <div class="pipe" id="pipe-brain"><b>Reason · async</b><span>starts after the semantic commit gate</span></div>
+    <div class="pipe" id="pipe-policy"><b>Guard · concurrent</b><span>consent, facts and claims check beside generation</span></div>
+    <div class="pipe" id="pipe-tts"><b>Speak · streaming</b><span>audio streams while listening remains armed</span></div>
+    <div class="pipe" id="pipe-action"><b>Act · async</b><span>tool requests never block the voice loop</span></div>
+  </div>
+  <div class="causal-note"><b>Two deliberate gates:</b> enough stable user intent before a reply, and enough verified content before speech. Retrieval, guards, memory, playback and tools overlap around them.</div>
+  <div class="disclosure">The panel shows an inspectable decision trace—intent, customer evidence, facts and policy—not private hidden chain-of-thought.
+    Grounding comes only from the <a href="https://asbl.in/broadway/" target="_blank" rel="noreferrer">official project page</a>,
+    <a href="https://asbl.in/broadway/landing/apartments-for-sale-in-hyderabad/" target="_blank" rel="noreferrer">official landing page</a>,
+    and the supplied CEO keynote.</div>
+
+  <section id="tutorPanel">
+    <h2>Hermes spoken recall</h2>
+    <div id="tutorTitle"></div>
+    <div id="tutorProgress"></div>
+    <div id="tutorQuestion"></div>
+    <div id="tutorAnswer"></div>
+    <div id="gradeControls">
+      <button data-grade="correct">Correct</button>
+      <button data-grade="partial">Partial</button>
+      <button data-grade="incorrect">Incorrect</button>
+      <button data-grade="skip">Skip</button>
+    </div>
+    <button id="recordReview">Record this review in Hermes</button>
+    <div id="tutorSaveStatus"></div>
+    <div id="tutorPrivacy"></div>
+  </section>
 
   <div id="cols">
     <div class="col"><h2>Conversation</h2><div id="feed"></div></div>
-    <div class="col"><h2>Brain (async Gemini talking points → injected into speech)</h2><div id="brainfeed"></div></div>
+    <div class="col"><h2>Live decision trace and sources</h2>
+      <div id="profile">Readiness: waiting for explicit caller evidence</div><div id="brainfeed"></div></div>
   </div>
   <div id="stats"></div>
 
@@ -97,9 +172,19 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let ws, ctx, playerNode;
-let duetLine = null, youInterim = null;
+let duetLine = null, youInterim = null, lastDuetUtterance = null;
 let capturing = false, sessionId = null;
 let capturedUtterances = [];  // [{utterance_id, asr_hypothesis, duration_s}]
+let tutorSessionId = null, tutorGrading = null;
+let latency = { asr: null, brain: null, tts: null };
+
+function renderLatency() {
+  const parts = [];
+  if (latency.asr !== null) parts.push(`turn assembly ${latency.asr} ms`);
+  if (latency.brain !== null) parts.push(`reasoning ${latency.brain} ms`);
+  if (latency.tts !== null) parts.push(`speech first audio ${latency.tts} ms`);
+  $("latency").textContent = parts.length ? `latency rail: ${parts.join(" · ")}` : "latency rail: waiting for a turn";
+}
 
 function addMsg(who, text, cls) {
   const feed = $("feed");
@@ -116,6 +201,44 @@ function glow(el, level) {
   const r = Math.min(28, level * 300);
   el.style.boxShadow = `0 0 ${r}px ${r/2}px ${el.id === "orb-you" ? "#58a6ff55" : "#3fb95055"}`;
   el.style.transform = `scale(${1 + Math.min(0.12, level)})`;
+}
+
+function setPipe(id, state, text) {
+  const node = $(id);
+  node.classList.remove("active", "done");
+  if (state) node.classList.add(state);
+  if (text) node.querySelector("span").textContent = text;
+}
+
+function traceRow(card, key, value) {
+  const row = document.createElement("div"); row.className = "trace-row";
+  const k = document.createElement("div"); k.className = "trace-key"; k.textContent = key;
+  const v = document.createElement("div"); v.className = "trace-value"; v.textContent = value || "—";
+  row.append(k, v); card.appendChild(row);
+}
+
+function addDecisionTrace(ev) {
+  const card = document.createElement("article"); card.className = "trace";
+  const head = document.createElement("div"); head.className = "trace-head";
+  const title = document.createElement("span"); title.textContent = `${ev.stage || "turn"} · ${ev.strategy || ev.intent}`;
+  const timing = document.createElement("span"); timing.textContent = `${ev.latency_ms} ms`;
+  head.append(title, timing); card.appendChild(head);
+  traceRow(card, "Heard", ev.user_utterance);
+  traceRow(card, "Intent", ev.intent);
+  traceRow(card, "Decision", ev.decision_summary);
+  traceRow(card, "Next action", ev.next_action);
+  traceRow(card, "Policy", ev.policy_check);
+  traceRow(card, "Spoken", ev.text || "Waited; no new pitch");
+  for (const fact of (ev.facts || [])) {
+    const box = document.createElement("div"); box.className = "fact";
+    const claim = document.createElement("div"); claim.textContent = fact.claim;
+    const link = document.createElement("a"); link.href = fact.source_url; link.target = "_blank";
+    link.rel = "noreferrer"; link.textContent = fact.source_label;
+    const freshness = document.createElement("small"); freshness.textContent = fact.freshness;
+    box.append(claim, link, freshness); card.appendChild(box);
+  }
+  $("brainfeed").appendChild(card);
+  $("brainfeed").parentElement.scrollTop = 1e9;
 }
 
 // -- session capture: review UI, built once the session stops -------------
@@ -158,12 +281,44 @@ async function saveCorrections() {
 }
 $("saveCorrections").onclick = saveCorrections;
 
+for (const button of document.querySelectorAll("#gradeControls button[data-grade]")) {
+  button.onclick = () => {
+    if (!ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ type: "tutor_grade", verdict: button.dataset.grade }));
+    $("gradeControls").classList.remove("on");
+  };
+}
+
+$("recordReview").onclick = async () => {
+  if (!tutorSessionId) return;
+  $("recordReview").disabled = true;
+  $("tutorSaveStatus").textContent = "recording through Hermes' review command…";
+  try {
+    const resp = await fetch("/hermes/review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: tutorSessionId, confirm: true }),
+    });
+    const body = await resp.json();
+    if (!resp.ok || !body.ok) throw new Error(body.error || `HTTP ${resp.status}`);
+    $("tutorSaveStatus").textContent = `Recorded. Next review: ${body.review.due_at}.`;
+    $("recordReview").classList.remove("on");
+  } catch (e) {
+    $("tutorSaveStatus").textContent = "⚠ record failed: " + e.message;
+    $("recordReview").disabled = false;
+  }
+};
+
 async function start() {
   $("go").disabled = true;
   $("captureCheckbox").disabled = true;
   $("review").classList.remove("on");
   capturedUtterances = [];
   sessionId = null;
+  tutorSessionId = null;
+  $("tutorPanel").classList.remove("on");
+  $("gradeControls").classList.remove("on");
+  $("recordReview").classList.remove("on");
   $("status").textContent = "requesting microphone…";
   const media = await navigator.mediaDevices.getUserMedia({ audio: {
     echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }});
@@ -177,7 +332,8 @@ async function start() {
   playerNode.connect(ctx.destination);
   playerNode.port.onmessage = (e) => glow($("orb-duet"), e.data);
 
-  ws = new WebSocket(`ws://${location.host}/ws`);
+  const wsScheme = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${wsScheme}://${location.host}/ws`);
   ws.binaryType = "arraybuffer";
 
   // Opt-in recording: one JSON control message, sent once the socket is open, only if the
@@ -203,21 +359,72 @@ async function start() {
     const ev = JSON.parse(e.data);
     if (ev.type === "status") { $("status").textContent = ev.text; if (ev.ready) $("status").style.color = "#3fb950"; }
     else if (ev.type === "error") { $("status").textContent = "⚠ " + ev.text; $("status").style.color = "#f85149"; }
-    else if (ev.type === "you") { addMsg("you (transcribed)", ev.text, "you-t"); duetLine = null; }
+    else if (ev.type === "you") {
+      const label = ev.raw_text ? `you (ASR: “${ev.raw_text}” · domain-normalized)` : "you (transcribed)";
+      addMsg(label, ev.text, "you-t"); duetLine = null; lastDuetUtterance = null;
+      setPipe("pipe-turn", "done", "complete thought accepted");
+      setPipe("pipe-brain", "active", "choosing a grounded response");
+    }
     else if (ev.type === "duet") {
-      if (!duetLine) duetLine = addMsg("duet (live)", "", "duet-t");
+      if (!duetLine || (ev.utterance_id && ev.utterance_id !== lastDuetUtterance)) {
+        duetLine = addMsg("Aira (planned speech)", "", "duet-t");
+      }
+      lastDuetUtterance = ev.utterance_id || lastDuetUtterance;
       duetLine.textContent += ev.text;
       feedScroll();
     }
+    else if (ev.type === "playback_cancel") {
+      playerNode.port.postMessage({ type: "clear" });
+      duetLine = null;
+      $("asrStatus").textContent = "barge-in accepted · Duet stopped speaking";
+      $("asrStatus").className = "speech";
+    }
     else if (ev.type === "brain") {
+      latency.brain = ev.latency_ms; renderLatency();
+      if (ev.signals) {
+        const labels = Object.entries(ev.signals).map(([key, value]) => {
+          const proof = ev.evidence && ev.evidence[key] ? ` — “${ev.evidence[key]}”` : "";
+          return `${key.replaceAll("_", " ")} ${value}${proof}`;
+        });
+        $("profile").textContent = `Remembered explicit evidence · ${labels.join(" · ")} · never a purchase probability`;
+      }
+      addDecisionTrace(ev);
+      setPipe("pipe-brain", "done", `${ev.intent} · ${ev.strategy}`);
+      setPipe("pipe-policy", "done", ev.policy_check || "response passed checks");
+    }
+    else if (ev.type === "brain_state") {
       const c = document.createElement("span");
       c.className = "chip";
-      c.textContent = `→ (${ev.latency_ms} ms, ${ev.intent}) ${ev.text}`;
+      c.textContent = `runtime · ${ev.state.replaceAll("_", " ")}: ${ev.text}`;
       $("brainfeed").appendChild(c);
       $("brainfeed").parentElement.scrollTop = 1e9;
+      if (ev.state === "speculating") setPipe("pipe-brain", "active", "reasoning on stable interim · speech gated");
+      if (ev.state === "speculation_committed") setPipe("pipe-turn", "done", "final transcript confirmed interim");
+      if (ev.state === "early_speech") setPipe("pipe-brain", "done", `speech field ready in ${ev.latency_ms} ms`);
+    }
+    else if (ev.type === "policy") {
+      const c = document.createElement("span");
+      c.className = "chip";
+      c.textContent = `policy · ${ev.state}: ${ev.text}`;
+      $("brainfeed").appendChild(c);
+      $("brainfeed").parentElement.scrollTop = 1e9;
+      setPipe("pipe-policy", "done", ev.state.replaceAll("_", " "));
+    }
+    else if (ev.type === "action") {
+      const adapter = ev.adapter ? ` · ${ev.adapter}` : "";
+      setPipe("pipe-action", ev.state === "requested" ? "active" : "done",
+              `${ev.name.replaceAll("_", " ")} · ${ev.state.replaceAll("_", " ")}${adapter}`);
+      if (ev.state !== "requested") {
+        const c = document.createElement("span");
+        c.className = "chip";
+        c.textContent = `action · ${ev.name.replaceAll("_", " ")}: ${ev.state}`;
+        $("brainfeed").appendChild(c);
+        $("brainfeed").parentElement.scrollTop = 1e9;
+      }
     }
     else if (ev.type === "stats") {
-      $("stats").textContent = `model step p50 ${ev.p50} ms · p95 ${ev.p95} ms (budget 80 ms) · ${ev.frames} frames`;
+      $("stats").textContent = `model step p50 ${ev.p50} ms · p95 ${ev.p95} ms · ${(100 * (ev.miss_rate || 0)).toFixed(0)}% missed 80 ms · ${ev.frames} frames`;
+      $("stats").style.color = ev.degraded ? "#f85149" : "#8b949e";
     }
     else if (ev.type === "capture_status" && ev.enabled) {
       capturing = true;
@@ -226,6 +433,76 @@ async function start() {
     }
     else if (ev.type === "captured") {
       capturedUtterances.push({ utterance_id: ev.utterance_id, asr_hypothesis: ev.asr_hypothesis, duration_s: ev.duration_s });
+    }
+    else if (ev.type === "asr_state") {
+      const el = $("asrStatus");
+      el.className = "";
+      if (ev.state === "ready") {
+        el.textContent = `transcriber ready · ${ev.vad || "audio gate"} → ${ev.model}`;
+        setPipe("pipe-asr", "", `${ev.model} ready`);
+      } else if (ev.state === "calibrating") {
+        el.textContent = `calibrating room noise · level ${ev.rms.toFixed(4)}`;
+      } else if (ev.state === "paused") {
+        el.textContent = `microphone paused · ${ev.reason}`;
+      } else if (ev.state === "rejected") {
+        el.textContent = `${ev.reason} · ignored`;
+      } else if (ev.state === "endpoint") {
+        el.textContent = "speech ended · checking whether you continue…";
+        el.className = "working";
+        setPipe("pipe-turn", "active", "waiting through a natural pause");
+      } else if (ev.state === "partial") {
+        el.textContent = `streaming transcript · ${ev.text}`;
+        el.className = "speech";
+        setPipe("pipe-asr", "active", ev.text || "streaming words");
+      } else if (ev.state === "transcribing") {
+        el.textContent = `transcribing ${ev.speech_ms} ms of verified speech…`;
+        el.className = "working";
+      } else if (ev.state === "result") {
+        latency.asr = ev.latency_ms; latency.brain = null; latency.tts = null; renderLatency();
+        el.textContent = ev.text ? `transcribed in ${ev.latency_ms} ms` : `no words found in ${ev.latency_ms} ms`;
+        setPipe("pipe-asr", "done", ev.text || "no meaningful words");
+      } else if (ev.state === "listening") {
+        if (ev.barge_in) {
+          el.textContent = "controlled duplex armed · speak to interrupt Duet";
+        } else el.textContent = ev.speech
+          ? `speech detected · level ${ev.rms.toFixed(4)} · adaptive gate ${ev.threshold.toFixed(4)}`
+          : `listening · level ${ev.rms.toFixed(4)} · adaptive gate ${ev.threshold.toFixed(4)}`;
+        if (ev.speech) el.className = "speech";
+      }
+    }
+    else if (ev.type === "tts_state") {
+      if (ev.state === "speaking") setPipe("pipe-tts", "active", `synthesizing with ${ev.backend}`);
+      else if (ev.state === "first_audio") {
+        latency.tts = ev.latency_ms; renderLatency();
+        setPipe("pipe-tts", "active", `first audio in ${ev.latency_ms} ms`);
+      } else if (ev.state === "listening") setPipe("pipe-tts", "done", "finished cleanly; listening again");
+      else if (ev.state === "interrupted") setPipe("pipe-tts", "done", "yielded to your interruption");
+    }
+    else if (ev.type === "tutor_setup") {
+      tutorSessionId = ev.session_id;
+      tutorGrading = ev.grading;
+      $("tutorPanel").classList.add("on");
+      $("tutorTitle").textContent = ev.title;
+      $("tutorProgress").textContent = `0/${ev.total} answered · due ${ev.due_at} · ${ev.grading === "self" ? "self-grade" : "Gemini grade"}`;
+      $("tutorQuestion").textContent = ev.question;
+      $("tutorPrivacy").textContent = ev.privacy;
+      document.querySelector("h1").textContent = "Hermes Voice";
+      document.querySelector(".sub").textContent = "interruptible spoken recall over your reviewed second brain";
+    }
+    else if (ev.type === "tutor_answer") {
+      $("tutorAnswer").textContent = `You answered: “${ev.text}”`;
+      if (tutorGrading === "self") $("gradeControls").classList.add("on");
+    }
+    else if (ev.type === "tutor_progress") {
+      $("gradeControls").classList.remove("on");
+      $("tutorAnswer").textContent = ev.feedback;
+      $("tutorProgress").textContent = `${ev.attempted}/${ev.total} answered · ${ev.correct} strictly correct`;
+      if (ev.complete) {
+        $("tutorQuestion").textContent = "Review complete. Check the score, then choose whether to record it in Hermes.";
+        $("recordReview").classList.add("on");
+      } else {
+        $("tutorQuestion").textContent = `Next: ${ev.next_question}`;
+      }
     }
   };
   function feedScroll(){ $("feed").parentElement.scrollTop = 1e9; }

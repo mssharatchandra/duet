@@ -58,12 +58,12 @@ def _make_hook(injector: TextInjector):
 # Scripted mode — the verifiable demo
 # --------------------------------------------------------------------------
 
-# (seconds_into_call, what the lead says). Objections straight from the playbook.
+# (seconds_into_call, what the consented ASBL lead says).
 DEFAULT_SCRIPT = [
-    (2.0, "Hi — yeah I run three coffee shops here in Austin, I'm the owner."),
-    (10.0, "Honestly we already use spreadsheets for ordering and it works fine."),
-    (18.0, "Hmm. And what does it cost?"),
-    (26.0, "Okay, that's less than I expected. We'd want it before the fall rush."),
+    (2.0, "Yes, this is a good time. We're looking for a family home."),
+    (10.0, "Privacy matters to us, and I work in the Financial District."),
+    (18.0, "Three crore may be above the budget we had in mind."),
+    (26.0, "My partner should join, but we could visit this Saturday."),
 ]
 
 

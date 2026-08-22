@@ -25,16 +25,23 @@ registerProcessor("mic-processor", MicProcessor);
 class PlayerProcessor extends AudioWorkletProcessor {
   // Jitter buffer: if the model occasionally misses its 80 ms budget, playing
   // frames the instant they arrive turns that jitter into audible stutter.
-  // Instead we hold playback until PREBUFFER frames (~320 ms) are queued, and
+  // Instead we hold playback until PREBUFFER frames (~160 ms) are queued, and
   // re-arm after an underrun — smoothness for a small, constant delay.
   constructor() {
     super();
-    this.PREBUFFER = 4;
+    this.PREBUFFER = 2;
     this.chunks = [];
     this.cur = null;
     this.idx = 0;
     this.armed = false;
     this.port.onmessage = (e) => {
+      if (e.data && e.data.type === "clear") {
+        this.chunks = [];
+        this.cur = null;
+        this.idx = 0;
+        this.armed = false;
+        return;
+      }
       this.chunks.push(e.data);
       if (this.chunks.length > 30) this.chunks.shift(); // ~2.4 s cap: stay live, drop backlog
     };

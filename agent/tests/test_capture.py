@@ -12,15 +12,15 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "web-demo"))
 
-from capture import FRAME_SIZE, SessionCapture  # noqa: E402
+from capture import FRAME_SIZE, SessionCapture, UtteranceSegmenter  # noqa: E402
 
-LOUD = np.full(FRAME_SIZE, 0.1, dtype=np.float32)   # rms 0.1 > VOICED_RMS_THRESHOLD (0.015)
+LOUD = np.full(FRAME_SIZE, 0.1, dtype=np.float32)   # rms 0.1 > any adaptive threshold in these tests
 QUIET = np.zeros(FRAME_SIZE, dtype=np.float32)       # rms 0.0 < threshold
 
 
 def make(tmp_path, **kw) -> SessionCapture:
     t = {"now": 1000.0}
-    return SessionCapture(tmp_path / "sess", now=lambda: t["now"]), t
+    return SessionCapture(tmp_path / "sess", now=lambda: t["now"], calibration_frames=0, **kw), t
 
 
 def feed(cap: SessionCapture, frame: np.ndarray, n: int):
@@ -42,11 +42,9 @@ def test_no_flush_while_only_voiced(tmp_path):
 
 
 def test_short_blip_does_not_count_as_an_utterance(tmp_path):
-    """<0.3s voiced (fewer than 4 frames) followed by enough quiet to hit the quiet threshold
-    must be discarded, not flushed as an utterance — mirrors Session._brain_loop's `elif quiet
-    >= 8: buf, voiced, quiet = [], 0, 0` branch exactly."""
+    """One 80 ms impulse is discarded while two frames allow short answers such as "yes"."""
     cap, _ = make(tmp_path)
-    feed(cap, LOUD, 2)                    # only 2 voiced frames — under VOICED_FRAMES_TO_COUNT (4)
+    feed(cap, LOUD, 1)
     record = feed(cap, QUIET, 8)          # enough quiet to close the window
     assert record is None
     assert cap.records == {}
@@ -54,10 +52,10 @@ def test_short_blip_does_not_count_as_an_utterance(tmp_path):
 
 
 def test_utterance_flushes_after_voiced_then_quiet(tmp_path):
-    """>=0.3s speech (4 frames) then >=0.6s silence (8 frames) closes exactly one utterance,
+    """>=0.16s speech (2 frames) then >=0.6s silence (8 frames) closes exactly one utterance,
     on the exact frame that crosses the quiet threshold — not before, not after."""
     cap, _ = make(tmp_path)
-    feed(cap, LOUD, 5)                    # >= 4 voiced frames
+    feed(cap, LOUD, 5)
     for i in range(1, 8):
         assert cap.add_frame(QUIET) is None, f"should not flush before 8 quiet frames (at {i})"
     record = cap.add_frame(QUIET)         # 8th quiet frame — boundary
@@ -65,6 +63,26 @@ def test_utterance_flushes_after_voiced_then_quiet(tmp_path):
     assert record.utterance_id in cap.records
     # 5 voiced + 8 quiet frames of 80 ms each = 1.04 s of audio in the WAV
     assert record.duration_s == pytest.approx((5 + 8) * FRAME_SIZE / 24_000, abs=1e-3)
+
+
+def test_adaptive_gate_detects_quiet_speech_above_room_floor():
+    seg = UtteranceSegmenter(calibration_frames=6)
+    room = np.full(FRAME_SIZE, 0.002, dtype=np.float32)
+    quiet_speech = np.full(FRAME_SIZE, 0.006, dtype=np.float32)
+    feed(seg, room, 10)
+    assert seg.threshold == pytest.approx(0.0036, abs=1e-4)
+    feed(seg, quiet_speech, 3)
+    audio = feed(seg, room, 8)
+    assert audio is not None
+    assert len(audio) == (3 + 8) * FRAME_SIZE
+
+
+def test_calibration_prevents_constant_room_noise_from_becoming_speech():
+    seg = UtteranceSegmenter(calibration_frames=6)
+    room = np.full(FRAME_SIZE, 0.006, dtype=np.float32)
+    assert feed(seg, room, 20) is None
+    assert not seg.active
+    assert seg.threshold == pytest.approx(0.0108, abs=1e-4)
 
 
 def test_quiet_with_empty_buffer_is_a_pure_noop(tmp_path):

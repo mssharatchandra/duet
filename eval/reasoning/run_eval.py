@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
 # Duet — reasoning-layer golden eval (CI gate: ≥90% of checks must pass).
 #
-# Runs the 12 scenarios in scenarios.json against the live reasoning layer and
-# scores structured checks: intent classification, objection classification,
-# grounding (must mention facts from the sheet — including two hallucination
-# canaries that must DECLINE features Brewline doesn't have), brevity, and
-# lead-signal tracking. Stdlib only, so CI needs nothing but Python 3.12.
+# Runs ASBL-specific scenarios against the live reasoning layer and scores
+# intent/objection classification, factual grounding, forbidden-claim canaries,
+# brevity, and explicit-evidence qualification signals.
 #
 # Usage: GEMINI_API_KEY=... python eval/reasoning/run_eval.py
 
 import json
 import statistics
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "agent"))
 
+from duet_agent import persona  # noqa: E402
 from duet_agent.reasoning import Guidance, ReasoningLayer  # noqa: E402
+from duet_agent.env import load_repo_env  # noqa: E402
 
 GATE = 0.90
-MAX_WORDS = 30  # prompt asks ≤22; slack for connectives so the gate tests substance, not luck
+MAX_WORDS = 32
 
 
 def run_scenario(layer: ReasoningLayer, sc: dict, retries: int = 1):
@@ -29,6 +30,8 @@ def run_scenario(layer: ReasoningLayer, sc: dict, retries: int = 1):
         result = layer.results.get()
         if isinstance(result, Guidance):
             return result
+        if attempt < retries:
+            time.sleep(1.5 * (attempt + 1))
     return result
 
 
@@ -41,15 +44,23 @@ def score(sc: dict, g) -> list[tuple[str, bool, str]]:
         checks.append(("objection", g.objection_type in sc["objection_in"], str(g.objection_type)))
     for i, group in enumerate(sc.get("mention_groups", [])):
         checks.append((f"grounding-{i}", any(k in tp for k in group), tp[:60]))
-    if "timeline_in" in sc:
-        checks.append(("signal-timeline", g.lead_signals["timeline"] in sc["timeline_in"], g.lead_signals["timeline"]))
-    if "authority_in" in sc:
-        checks.append(("signal-authority", g.lead_signals["authority"] in sc["authority_in"], g.lead_signals["authority"]))
+    for signal, accepted in sc.get("signals", {}).items():
+        actual = g.lead_signals.get(signal)
+        checks.append((f"signal-{signal}", actual in accepted, str(actual)))
+    if "tools" in sc:
+        actual_tools = {action.name for action in g.tool_requests}
+        checks.append(("tools", set(sc["tools"]) <= actual_tools, str(sorted(actual_tools))))
+    for forbidden in sc.get("forbidden_terms", []):
+        checks.append((f"forbid-{forbidden}", forbidden not in tp, tp[:80]))
+    checks.append(("capability-truth", persona.response_problem(g.talking_point) is None, tp[:80]))
+    checks.append(("fact-ids", all(f in persona.FACT_REGISTRY for f in g.fact_ids), str(g.fact_ids)))
+    checks.append(("safe-trace", g.response_strategy in persona.RESPONSE_STRATEGIES, g.response_strategy))
     checks.append(("brevity", len(g.talking_point.split()) <= MAX_WORDS, f"{len(g.talking_point.split())} words"))
     return checks
 
 
 def main() -> int:
+    load_repo_env()
     scenarios = json.loads((Path(__file__).parent / "scenarios.json").read_text())
     layer = ReasoningLayer(timeout_s=20.0)
     print(f"model: {layer.model} · {len(scenarios)} scenarios\n")

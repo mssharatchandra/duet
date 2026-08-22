@@ -42,3 +42,4 @@ eval/asr/sessions/
 
 # Local data volumes
 infra/data/
+.local/
