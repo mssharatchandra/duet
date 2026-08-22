@@ -95,9 +95,12 @@ and DNC before dialing, and package the service behind Caddy in Docker Compose.
 
 ## Telephone adapter
 
-For India, Exotel AgentStream is the natural first integration candidate: its Voicebot applet sends
-caller audio to a secure WebSocket and accepts bot audio back. Twilio Media Streams and Plivo Audio
-Streams provide equivalent bidirectional transports. The adapter is deliberately thin:
+For India, Exotel AgentStream is the natural production integration candidate: its Voicebot applet
+sends caller audio to a secure WebSocket and accepts bot audio back. Twilio Media Streams and Plivo
+Audio Streams provide equivalent bidirectional transports. Public PSTN is not genuinely free because
+numbers and carrier termination have a cost. For a zero-carrier-cost POC, run Asterisk on the VPS and
+call between two SIP softphones; browser/WebRTC remains the simplest visual demo. The adapter is
+deliberately thin:
 
 ```text
 telephony 8/16 kHz frames ⇄ codec/resampler ⇄ existing Session queues ⇄ Sarvam / Gemini / TTS
@@ -110,4 +113,3 @@ call control and provider-specific clear/mark events belong in the adapter.
 
 Real outbound use is gated on ASBL approval and TCCCPR/DLT-compliant consent and preferences. A safe
 technical demo should initially call only an explicitly allowlisted team number.
-

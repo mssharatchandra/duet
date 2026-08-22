@@ -5,8 +5,8 @@ Loki (dashboards/metrics/logs), and Duet's own Postgres (benchmark + call record
 
 ## Run it
 
-Needs Docker (macOS: OrbStack or Docker Desktop; this repo's dev Mac has neither — the stack
-is verified in CI instead, see `.github/workflows/infra.yml`).
+Needs Docker (macOS: Docker Desktop or OrbStack). The stack is also booted and smoke-tested in CI;
+see `.github/workflows/infra.yml`.
 
 ```bash
 cd infra && cp .env.example .env

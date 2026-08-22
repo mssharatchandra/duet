@@ -851,6 +851,39 @@ Exotel AgentStream is the recommended India-first transport; Twilio or Plivo rem
 alternatives. Real outbound dialing remains blocked until ASBL's registered calling and consent
 process is connected.
 
+## 0024 — 2026-08-23 — Frame Duet as guarded speculative duplex, not a new monolithic model
+
+**Status:** Accepted as the open-source and research direction; novelty remains unproven until the
+ablation and human-evaluation programme is completed.
+
+The running Aira architecture is a modular asynchronous system, not “one big model in which several
+submodels work simultaneously.” Streaming ASR, semantic planning, deterministic policy, actions and
+streaming TTS have independent state, latency and failure modes. They communicate through transcript,
+generation, cancellation and action events. Two information dependencies remain unavoidable: enough
+stable caller intent is needed before selecting an answer, and enough verified response content is
+needed before allowing speech.
+
+The broad architecture is prior art. Moshi and PersonaPlex represent native full-duplex speech models;
+Kyutai Unmute represents a low-latency modular speech cascade; MoshiRAG demonstrates asynchronous
+augmentation. Duet therefore does not claim to invent concurrency, barge-in or speculative execution.
+Its candidate contribution is the combination of stable-partial speculation, final-transcript semantic
+confirmation, deterministic pre-emption, interruption repair, generation-safe cancellation,
+capability-backed action speech and an auditable evidence trace. The proposed research question is
+whether this composition improves perceived latency without increasing wrong starts, stale speech,
+grounding violations or task failure. `docs/RESEARCH_DIRECTION.md` defines the six required ablations,
+metrics and conditions that would falsify the thesis.
+
+The observability boundary is also made explicit. Benchmark calls already create Langfuse traces and
+correlated Postgres records; Grafana, Prometheus and Loki containers exist; CI boots the stack and verifies
+Langfuse ingestion, Grafana provisioning and Postgres writes. The live Aira browser server does not yet
+create a trace per session, expose application Prometheus metrics or ship logs to Loki. These are P0 before
+the phrase “production observable” may be used.
+
+Exotel remains the preferred India-oriented paid PSTN candidate. There is no truly free PSTN path because
+carrier numbers and termination have marginal cost. The free POC transport will be browser/WebRTC first,
+then an Asterisk SIP lab on the existing VPS with two softphones if a call-shaped demonstration is needed.
+The SIP, browser and eventual PSTN adapters must share one Duet session contract.
+
 ## Running spend
 
 | Date | Item | Cost | Total |

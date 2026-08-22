@@ -57,7 +57,7 @@ jobs:
         run: .venv/bin/python -c "import duet_agent.local_loop, duet_agent.sdr_loop; print('imports OK')"
 
   reasoning-eval:
-    # Live golden eval against Gemini (12 scenarios, ~$0.001/run at list price,
+    # Live golden eval against Gemini (17 scenarios; low but non-zero API cost,
     # free tier in practice). Push-only: fork PRs have no secret access.
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
