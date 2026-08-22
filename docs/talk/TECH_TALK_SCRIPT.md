@@ -152,7 +152,7 @@ one on the relevant latency, quality, cost and operating gate.
 > 288 ms
 > synthetic barge-in → playback yield
 
-Smaller line: `153 tests · human naturalness gate still open`
+Smaller line: `141 focused tests · human naturalness gate still open`
 
 **Talk:** These are not industry-leading claims. Barge-in control is promising but missed our proposed
 250 ms p95 target in this one run. Rich response latency is still too high and variable. A 300–400 ms

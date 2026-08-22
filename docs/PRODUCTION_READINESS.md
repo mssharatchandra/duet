@@ -40,7 +40,7 @@ real trials to discover. Extract one contract at a time and require behavior/lat
 | Actions | Local idempotent ledger or allowlisted HTTPS gateway | Authenticated tool identity, idempotency keys, timeout/retry contract, confirmation state and reconciliation |
 | Speech | Persistent Sarvam TTS, pacing and adaptive jitter | MOS/intelligibility suite; pronunciation lexicon; voice fallback; cancellation under packet loss |
 | Telemetry | Langfuse + Prometheus + Loki/Alloy + Postgres, correlated and redacted | Retention/access policy, trace sampling, alerting, telemetry-loss alerts and cross-service propagation |
-| Testing | 153 tests, live reasoning gate, synthetic service smoke, ASR/TTS/duplex harnesses | Release-blocking end-to-end simulations, repeated stochastic runs, phone fixtures, k6/chaos and rollback test |
+| Testing | 141 focused tests, live reasoning gate, synthetic service smoke, ASR/TTS/duplex harnesses | Release-blocking end-to-end simulations, repeated stochastic runs, phone fixtures, k6/chaos and rollback test |
 | Privacy/safety | Consent-first persona, opt-out and content redaction | Durable consent/DNC before dialing, deletion SLA, PII inventory, threat model and legal review |
 | Deployment | Local Mac/Docker observability | Immutable containers, TLS/WSS, auth, secrets manager, CI deploy, canary, rollback and runbooks |
 

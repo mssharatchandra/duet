@@ -76,7 +76,7 @@ mic → Mimi codec → gen.step() → Mimi → spk   user audio → faster-whisp
 | `eval/reasoning/` | 12-scenario golden eval, CI-gated ≥90% |
 | `web-demo/` | aiohttp + WebSocket + AudioWorklets browser demo, session capture |
 | `infra/` | Docker: Langfuse, Grafana, Prometheus, Loki, Postgres |
-| `docs/` | DECISIONS (journal), LEARNING (curriculum), blog, BUILD_WORLDCLASS, HERMES_VOICE_MVP |
+| `docs/` | Architecture, decisions journal, learning curriculum, product and production-readiness docs |
 
 Run: `cd agent && uv run duet-local` (raw duplex) · `uv run duet-sdr` (scripted SDR, no mic) ·
 `agent/.venv/bin/python web-demo/server.py` → http://localhost:8990 · `./scripts/local-demo.sh`
@@ -209,15 +209,6 @@ This is the honest critique. Do not soften it; fix it or account for it.
    `gpt-4o-transcribe` for ASR, `gpt-4o-mini-tts` for TTS, plus the Realtime API as a fourth
    benchmark arm. Wire them as swappable backends *measured by our harness*, not as a silent
    upgrade: the point is to quantify what commercial quality costs in latency, money and privacy.
-
-**The strategic pivot worth taking seriously** (`docs/HERMES_VOICE_MVP.md`): the owner has a
-separate private repo, `hermes-brain` ("brain of my personal AI"), which already computes a
-spaced-repetition schedule (`review_intervals_days: [1,3,7,14,30,90]`) and ships a `recall.md` per
-learning run. The content and schedule exist; only the *interface* is missing. **Full-duplex spoken
-recall over your own knowledge base** — a tutor you can interrupt, that stays quiet while you
-struggle — is a genuinely novel personal product, runs local-first for ~$1/month versus $48–90 for
-commercial voice platforms, and closes hermes-brain's own loop. Its README explicitly invites this:
-"models and harnesses are replaceable executors."
 
 **The broader contribution** (`docs/BUILD_WORLDCLASS.md`): voice AI has **no eval culture**. Text
 agents have SWE-bench and trace viewers; voice agents ship on "it felt laggy." Nobody reports their

@@ -40,17 +40,6 @@ from duet_agent.asr import SileroSpeechDetector, load_asr, meaningful_text  # no
 from duet_agent.asr_util import to_whisper_rate  # noqa: E402
 from duet_agent.actions import ActionLayer  # noqa: E402
 from duet_agent.env import load_repo_env  # noqa: E402
-from duet_agent.hermes import (  # noqa: E402
-    HermesError,
-    TutorGuidance,
-    TutorSession,
-    default_hermes_root,
-    is_explicit_give_up,
-    load_recall_deck,
-    parse_spoken_grade,
-    parse_tutor_guidance,
-    record_review,
-)
 from duet_agent.injector import TextInjector  # noqa: E402
 from duet_agent.live_telemetry import LiveSessionTelemetry, METRICS  # noqa: E402
 from duet_agent import persona  # noqa: E402
@@ -69,7 +58,6 @@ STATIC = Path(__file__).parent / "static"
 SESSIONS_DIR = Path(__file__).resolve().parents[1] / "eval" / "asr" / "sessions"
 CAPTURES: dict[str, SessionCapture] = {}  # session_id -> capture, kept for the process lifetime so
                                            # /corrections can still land after the WS disconnects
-TUTORS: dict[str, TutorSession] = {}       # same lifetime rule for explicit post-session review writes
 
 
 class Session:
@@ -88,9 +76,6 @@ class Session:
         self.listen_after = 0.0
         self.injector: TextInjector | None = None
         self.step_ms: list[float] = []
-        self.tutor: TutorSession | None = None
-        self.tutor_error: str | None = None
-        self.tutor_started = False
         self.sdr_started = False
         self.sdr_permission = "pending"
         self.sdr_opted_out = False
@@ -117,7 +102,7 @@ class Session:
         self.brain = None
         self.telemetry = LiveSessionTelemetry(
             self.session_id,
-            args.mode,
+            "sdr",
             {
                 "voice_stack": args.voice_stack,
                 "asr": args.asr,
@@ -128,13 +113,6 @@ class Session:
         self.capture: SessionCapture | None = None
         if getattr(args, "capture", False):
             self.enable_capture()
-        if args.mode == "hermes":
-            try:
-                deck = load_recall_deck(args.hermes_root, slug=args.hermes_run)
-                self.tutor = TutorSession(deck)
-                TUTORS[self.session_id] = self.tutor
-            except HermesError as e:
-                self.tutor_error = str(e)
 
     def emit(self, **ev) -> None:
         telemetry = getattr(self, "telemetry", None)
@@ -152,8 +130,6 @@ class Session:
         self.emit(type="capture_status", enabled=True, session_id=self.session_id)
 
     def start(self) -> None:
-        if self.tutor_error:
-            self.emit(type="error", text=f"Hermes unavailable: {self.tutor_error}")
         threading.Thread(target=self._model_loop, daemon=True).start()
         threading.Thread(target=self._brain_loop, daemon=True).start()
 
@@ -227,7 +203,6 @@ class Session:
             self.emit(type="error", text=f"model failed to load: {e}")
             return
         self.emit(type="status", text=f"ready — Moshi loaded in {load_s:.1f}s. Say hi!", ready=True)
-        self._start_tutor()
 
         # One-frame pipeline: while the Rust codec encodes THIS frame on its own
         # threads, the model steps on the PREVIOUS frame's tokens, and decoded
@@ -298,7 +273,6 @@ class Session:
         frames flow directly from the WebSocket to the brain's tap_q; there's no mouth to speak back,
         so the speaker stays silent and no `duet`/`stats` events are ever emitted."""
         self.emit(type="status", text="--no-model: Moshi skipped — ASR/brain/capture only", ready=True)
-        self._start_tutor()
         while self.running:
             try:
                 self.mic_q.get(timeout=0.5)
@@ -337,7 +311,6 @@ class Session:
             ),
             ready=True,
         )
-        self._start_tutor()
         self._start_sdr()
         while self.running:
             try:
@@ -430,36 +403,9 @@ class Session:
         elif self.injector is not None:
             self.injector.inject(text)
 
-    def _start_tutor(self) -> None:
-        if self.tutor is None or self.tutor_started:
-            return
-        self.tutor_started = True
-        opening = self.tutor.opening()
-        self.speak(opening)
-        sarvam_voice = self.args.asr == "sarvam" or self.args.tts_backend.startswith("sarvam")
-        if sarvam_voice:
-            voice_privacy = " Spoken audio and/or tutor speech is processed by Sarvam's API."
-        else:
-            voice_privacy = " Speech recognition and synthesis stay on this Mac."
-        self.emit(
-            type="tutor_setup",
-            session_id=self.session_id,
-            title=self.tutor.deck.title,
-            slug=self.tutor.deck.slug,
-            due_at=self.tutor.deck.due_at.isoformat(),
-            question=opening,
-            total=len(self.tutor.deck.questions),
-            grading="remote" if self.args.hermes_remote_grading else "self",
-            privacy=(
-                "Study material and answers are sent to Gemini for grading." + voice_privacy
-                if self.args.hermes_remote_grading
-                else "Study material is not sent to a remote grader." + voice_privacy
-            ),
-        )
-
     def _start_sdr(self) -> None:
         """Begin a consented-lead callback with deterministic AI disclosure."""
-        if self.args.mode != "sdr" or self.sdr_started:
+        if self.sdr_started:
             return
         self.sdr_started = True
         self.speak(persona.OPENING)
@@ -467,32 +413,6 @@ class Session:
             type="policy",
             state="permission_pending",
             text="AI identity disclosed; waiting for permission before discovery",
-        )
-
-    def grade_tutor(self, verdict: str) -> None:
-        """Apply a UI self-grade; remote-grading sessions reject this control."""
-        if self.tutor is None or self.args.hermes_remote_grading:
-            return
-        try:
-            self._apply_tutor_grade(self.tutor.self_grade(verdict))
-        except HermesError as e:
-            self.emit(type="status", text=f"self-grade ignored: {e}")
-
-    def _apply_tutor_grade(self, guidance: TutorGuidance) -> None:
-        if self.tutor is None:
-            return
-        spoken = self.tutor.apply_grade(guidance)
-        self.speak(spoken)
-        self.emit(type="brain", text=spoken, latency_ms=round(guidance.latency_ms), intent=f"recall:{guidance.verdict}")
-        self.emit(
-            type="tutor_progress",
-            verdict=guidance.verdict,
-            feedback=guidance.feedback,
-            attempted=self.tutor.attempted,
-            correct=self.tutor.strict_correct,
-            total=len(self.tutor.deck.questions),
-            complete=self.tutor.complete,
-            next_question=None if self.tutor.complete else self.tutor.current_question,
         )
 
     # -- the slow brain -------------------------------------------------------
@@ -510,16 +430,7 @@ class Session:
 
     def _make_brain(self):
         try:
-            if self.tutor is not None and self.args.hermes_remote_grading:
-                brain = ReasoningLayer(
-                    system_prompt=self.tutor.system_prompt(),
-                    prompt_builder=self.tutor.grading_prompt,
-                    response_parser=parse_tutor_guidance,
-                )
-            elif self.args.mode == "sdr":
-                brain = ReasoningLayer()
-            else:
-                return None
+            brain = ReasoningLayer()
             telemetry = getattr(self, "telemetry", None)
             if telemetry is not None:
                 telemetry.attach_brain(brain)
@@ -532,7 +443,6 @@ class Session:
         """Start reasoning on a stable interim, but never speak before commit."""
         if (
             brain is None
-            or self.args.mode != "sdr"
             or self.sdr_permission != "granted"
             or self.sdr_opted_out
             or persona.is_opt_out(text)
@@ -750,34 +660,7 @@ class Session:
             if brain:
                 self._commit_or_replace_speculation(text, history[:-1], brain)
             return
-        if self.tutor is not None:
-            if self.tutor.pending_answer is not None and not self.args.hermes_remote_grading:
-                verdict = parse_spoken_grade(text)
-                if verdict:
-                    feedback = "Repeating." if verdict == "repeat" else f"Marked {verdict}."
-                    self._apply_tutor_grade(TutorGuidance(verdict=verdict, feedback=feedback))
-                else:
-                    self.speak("I have your answer. Please say correct, partial, incorrect, skip, or repeat.")
-                    self.emit(type="status", text="waiting for a spoken self-grade")
-                history.append(("lead", text))
-                return
-            if self.tutor.accept_answer(text):
-                if brain:
-                    brain.request(history, text)
-                else:
-                    self.emit(
-                        type="tutor_answer",
-                        text=text,
-                        question=self.tutor.current_question,
-                        question_number=self.tutor.index + 1,
-                    )
-                    if is_explicit_give_up(text):
-                        self._apply_tutor_grade(TutorGuidance(verdict="skip", feedback="No problem — marked skipped."))
-                    else:
-                        self.speak("I have your answer. How would you grade it: correct, partial, incorrect, or skip?")
-            else:
-                self.emit(type="status", text="the review is already complete")
-        elif brain:
+        if brain:
             brain.request(history, text)
         history.append(("lead", text))
 
@@ -812,12 +695,7 @@ class Session:
                 text="Reasoning ready but held until the final transcript confirms it",
             )
             return
-        if isinstance(result, TutorGuidance):
-            try:
-                self._apply_tutor_grade(result)
-            except HermesError as e:
-                self.emit(type="status", text=f"tutor result ignored: {e}")
-        elif isinstance(result, Guidance):
+        if isinstance(result, Guidance):
             if not hasattr(self, "lead_signals"):
                 self.lead_signals = {dimension: "none" for dimension in persona.BANT}
                 self.lead_evidence = {dimension: None for dimension in persona.BANT}
@@ -1413,8 +1291,6 @@ async def ws_handler(request: web.Request) -> web.WebSocketResponse:
                     continue
                 if ctrl.get("type") == "control" and ctrl.get("capture"):
                     session.enable_capture()
-                elif ctrl.get("type") == "tutor_grade":
-                    session.grade_tutor(str(ctrl.get("verdict", "")))
             elif msg.type == WSMsgType.ERROR:
                 break
     finally:
@@ -1455,24 +1331,6 @@ async def corrections_handler(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "applied": applied, "unknown": unknown})
 
 
-async def hermes_review_handler(request: web.Request) -> web.Response:
-    """Persist a completed score only after the learner confirms it in the UI."""
-    try:
-        body = await request.json()
-    except (ValueError, TypeError) as e:
-        return web.json_response({"ok": False, "error": f"invalid JSON body: {e}"}, status=400)
-    tutor = TUTORS.get(body.get("session_id"))
-    if tutor is None:
-        return web.json_response({"ok": False, "error": "unknown tutor session"}, status=404)
-    if body.get("confirm") is not True:
-        return web.json_response({"ok": False, "error": "explicit confirmation is required"}, status=400)
-    try:
-        data = await asyncio.to_thread(record_review, tutor)
-    except HermesError as e:
-        return web.json_response({"ok": False, "error": str(e)}, status=400)
-    return web.json_response({"ok": True, "review": data, "slug": tutor.deck.slug})
-
-
 async def health_handler(request: web.Request) -> web.Response:
     args = request.app["args"]
     return web.json_response(
@@ -1492,7 +1350,7 @@ async def readiness_handler(request: web.Request) -> web.Response:
     """Configuration readiness; provider reachability is measured by live error metrics."""
     args = request.app["args"]
     missing: list[str] = []
-    if args.mode == "sdr" and not os.environ.get("GEMINI_API_KEY"):
+    if not os.environ.get("GEMINI_API_KEY"):
         missing.append("GEMINI_API_KEY")
     if (args.asr == "sarvam" or args.tts_backend.startswith("sarvam")) and not os.environ.get("SARVAM_API_KEY"):
         missing.append("SARVAM_API_KEY")
@@ -1559,23 +1417,12 @@ def main() -> None:
     ap.add_argument("--tts-backend", choices=["sarvam-ws", "sarvam", "piper", "kokoro"], default=default_tts,
                     help="persistent Sarvam WebSocket (recommended), legacy Sarvam HTTP, "
                          "stable local Piper, or experimental local Kokoro")
-    ap.add_argument("--mode", choices=["sdr", "hermes"], default="sdr",
-                    help="SDR demo, or spoken recall over an approved Hermes learning run")
-    ap.add_argument("--hermes-root", type=Path,
-                    default=Path(os.environ.get("HERMES_BRAIN_PATH", default_hermes_root())),
-                    help="path to the hermes-brain checkout (default: sibling repo or HERMES_BRAIN_PATH)")
-    ap.add_argument("--hermes-run", default=None,
-                    help="approved Hermes run slug; default selects the oldest due review")
-    ap.add_argument("--hermes-remote-grading", action="store_true",
-                    help="send the private study material and spoken answers to Gemini for automatic grading; "
-                         "without this flag Hermes mode uses local human self-grading")
     args = ap.parse_args()
+    args.mode = "sdr"  # internal telemetry label; Duet now has one product runtime
     if args.no_model:
         args.voice_stack = "none"
     if args.asr_model:
         args.asr = f"whisper:{args.asr_model}"
-    if args.hermes_remote_grading and args.mode != "hermes":
-        ap.error("--hermes-remote-grading requires --mode hermes")
     if args.barge_in and (args.voice_stack != "open" or args.asr != "sarvam"):
         ap.error("--barge-in currently requires --voice-stack open --asr sarvam")
     if args.hf_repo is None and args.voice_stack == "moshi":
@@ -1586,7 +1433,6 @@ def main() -> None:
     app["args"] = args
     app.router.add_get("/ws", ws_handler)
     app.router.add_post("/corrections", corrections_handler)
-    app.router.add_post("/hermes/review", hermes_review_handler)
     app.router.add_get("/healthz", health_handler)
     app.router.add_get("/readyz", readiness_handler)
     app.router.add_get("/metrics", metrics_handler)
@@ -1600,8 +1446,7 @@ def main() -> None:
         voice = "NO VOICE (ASR/brain/capture only)"
     else:
         voice = f"experimental Moshi: {args.hf_repo}"
-    product = "Hermes spoken recall" if args.mode == "hermes" else "SDR demo"
-    print(f"Duet web demo → http://localhost:{args.port}  ({product}; {voice}, capture default {'ON' if args.capture else 'off'})")
+    print(f"Duet web demo → http://localhost:{args.port}  (ASBL SDR demo; {voice}, capture default {'ON' if args.capture else 'off'})")
     web.run_app(app, port=args.port, print=None)
 
 

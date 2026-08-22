@@ -54,7 +54,7 @@ You should be able to explain and debug each level. Stop descending when the low
 
 - Grounding, tools, memory, role adherence, correction, action confirmation, and privacy boundaries.
 - Tool success and conversational timing must be evaluated together.
-- Graduation evidence: the agent completes a Hermes review or one real tool action, survives interruption, and never records an unconfirmed action.
+- Graduation evidence: the agent completes one grounded tool action, survives interruption, and never records an unconfirmed action.
 
 ### Level 6 — Production system
 
@@ -163,7 +163,7 @@ In 30 minutes, the audience will understand why a voice agent is not ASR + LLM +
 1. **Cold open — 90 seconds:** play two anonymized clips: cascade dead air and duplex overlap. Ask the audience which failure is worse.
 2. **The mental model — 4 minutes:** human conversation as two continuous streams; explain the 80 ms frame and why "turn" is an application concept, not a physical one.
 3. **Three architectures — 4 minutes:** cascade, speech-native pipeline, end-to-end duplex. State where information and latency are lost.
-4. **What we built — 4 minutes:** Duet's browser, PersonaPlex/Moshi backend, interaction metrics, Hermes grounding, and fallback speech plane.
+4. **What we built — 4 minutes:** Duet's browser, PersonaPlex/Moshi experiments, interaction metrics, ASBL grounding, and fallback speech plane.
 5. **Live demo — 4 minutes:** normal question, thoughtful pause, interruption, correction, tool/memory action. Show the timeline, not only the audio.
 6. **The failures — 5 minutes:** hallucinated transcript from silence, self-echo, contention, wrong ASR default chosen from a nondiscriminating eval, and hybrid p95 tail. Each failure becomes an eval.
 7. **The result table — 3 minutes:** compare systems on takeover, handoff, WER, MOS, task success, and cost. If PersonaPlex loses, show it.
@@ -177,7 +177,7 @@ The live demo is not ready until it can show all four behaviors:
 1. remain silent through a mid-sentence thinking pause,
 2. respond within 300 ms after a genuine handoff,
 3. stop within 300 ms when interrupted and repair coherently,
-4. complete one grounded Hermes/tool action with explicit confirmation.
+4. complete one grounded ASBL tool action with explicit confirmation.
 
 Have a 90-second recorded backup using the exact same build and scenario.
 

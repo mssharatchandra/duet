@@ -36,38 +36,27 @@ The repository can support an open technical report or workshop paper after it c
 
 ## Running architecture
 
-```text
-Browser microphone — continuous 24 kHz audio
-        │
-        ▼
-Duet session controller
-        │
-        ├── Sarvam Saaras v3
-        │     streaming ASR, partial/final transcripts and speech events
-        │
-        ├── Turn assembler
-        │     fragment merge, endpointing and stable-partial speculation
-        │
-        ├── Deterministic fast lane
-        │     consent, opt-out, echo rejection, interruption repair,
-        │     stale-response cancellation and capability/claim guards
-        │
-        ├── Gemini 3.1 Flash Lite
-        │     grounded ASBL planning and objection handling
-        │
-        ├── ASBL action adapter
-        │     idempotent brochure, callback, CRM and site-visit requests
-        │
-        └── Sarvam Bulbul v3
-              persistent streaming TTS
-                        │
-                        ▼
-                  Browser speaker
+```mermaid
+flowchart LR
+    Caller["Caller"] <-->|"continuous 24 kHz audio"| Browser["Browser<br/>AudioWorklet + AEC"]
+    Browser <-->|"PCM + typed events"| Session["Duet session<br/>generation + cancellation owner"]
+    Session <--> ASR["Sarvam Saaras<br/>streaming ASR"]
+    ASR --> Turn["Turn assembler<br/>stable-partial speculation"]
+    Turn --> Brain["Gemini Flash Lite<br/>grounded planning"]
+    Policy["Deterministic fast lane<br/>consent + interruption + claims"] --> Brain
+    Brain --> Gate{"safe and current?"}
+    Policy --> Gate
+    Gate --> TTS["Sarvam Bulbul<br/>persistent streaming TTS"]
+    TTS --> Browser
+    Brain -.-> Actions["Idempotent ASBL actions"]
+    Session -.-> Obs["Langfuse + Prometheus<br/>Loki + Postgres"]
 ```
 
 These lanes overlap, but causality cannot be parallelized away. The system needs enough stable caller intent before choosing an answer and enough verified response content before speaking it. The engineering objective is to move useful work before those gates and cancel invalid speculation cheaply.
 
-The live implementation is described line by line in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The [full architecture dossier](docs/ARCHITECTURE.md) includes normal-turn and barge-in sequences,
+the interruption state machine, trust boundaries, action consistency, observability, deployment and
+the target production decomposition.
 
 ## What the demo does
 
@@ -106,13 +95,13 @@ To exercise the complete WebSocket path with a synthetic caller while the server
 web-demo/.venv/bin/python scripts/smoke-live-demo.py
 ```
 
-See [web-demo/README.md](web-demo/README.md) for local ASR/TTS fallbacks, tuning flags and the secondary Hermes learning-agent mode.
+See [web-demo/README.md](web-demo/README.md) for local ASR/TTS fallbacks, tuning flags and the no-model smoke path.
 
 ## What is measured today
 
 | Surface | Implemented | Current evidence | Missing before a strong claim |
 |---|---|---|---|
-| Unit and flow correctness | Yes | 153 passing tests across turn assembly, policy, actions, ASR/TTS adapters, interaction flow and telemetry | Public multi-user and telephony integration tests |
+| Unit and flow correctness | Yes | 141 focused tests across turn assembly, policy, actions, ASR/TTS adapters, interaction flow and telemetry | Public multi-user and telephony integration tests |
 | LLM behavior | Yes | 17-scenario live Gemini golden set with a 90% CI gate | Larger adversarial and multilingual sets |
 | ASR | Yes | WER-by-noise/reverb/speed matrix; Parakeet MLX leads the tested local candidates | Consent-cleared real microphone and phone audio |
 | TTS | Partial | TTFB/RTF harness for local voices; live Sarvam timings in smoke tests | Blind MOS, intelligibility and prosody ratings |
@@ -131,7 +120,7 @@ The repository contains a self-hosted observability stack:
 - **Loki + Alloy:** structured JSONL events are tailed and shipped with shared `session_id` and `trace_id` fields.
 - **Postgres + Grafana:** one durable call summary records latency, turns, interruptions, cost and the Langfuse trace ID; a provisioned dashboard combines all three data sources.
 - **Privacy and isolation:** transcript/prompt content is hashed and length-counted by default. All export paths are bounded and asynchronous so an observability outage cannot block audio.
-- **GitHub Actions:** lints, runs 153 unit/flow tests, gates live Gemini behavior at 90%, boots the stack, verifies Langfuse ingestion and Grafana provisioning, ships a test log through Alloy to Loki, and writes a Postgres call row.
+- **GitHub Actions:** lints, runs 141 focused unit/flow tests, gates live Gemini behavior at 90%, boots the stack, verifies Langfuse ingestion and Grafana provisioning, ships a test log through Alloy to Loki, and writes a Postgres call row.
 
 This closes the earlier instrumentation gap; it does **not** make the service production reliable by itself. Alert routing, retention policy enforcement, distributed session execution, provider SLOs, load/chaos tests and on-call runbooks remain open.
 

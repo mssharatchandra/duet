@@ -169,8 +169,8 @@ class ReasoningLayer:
             raise RuntimeError("GEMINI_API_KEY not set (see .env.example)")
         self.model = model or os.environ.get("REASONING_MODEL", DEFAULT_MODEL)
         self.timeout_s = timeout_s
-        # Profiles let the same fail-silent transport serve a sales agent or a
-        # Hermes tutor without teaching this module either product's schema.
+        # Keep transport generic enough for alternate sales planners without
+        # coupling provider I/O to a particular response schema.
         self.system_prompt = system_prompt or persona.SYSTEM_PROMPT
         self.prompt_builder = prompt_builder or persona.build_prompt
         self.response_parser = response_parser or parse_guidance

@@ -11,7 +11,6 @@ if [[ ! -x "$python_bin" ]]; then
 fi
 
 exec "$python_bin" web-demo/server.py \
-  --mode sdr \
   --voice-stack open \
   --asr sarvam \
   --tts-backend sarvam-ws \

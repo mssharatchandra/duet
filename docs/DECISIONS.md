@@ -413,7 +413,7 @@ first real utterance is recorded, but one utterance is not a benchmark.
 
 ## 0014 — 2026-08-01 — Hermes Voice v0: canonical scheduler, self-grade default, explicit remote grade
 
-**Status:** Accepted and implemented locally. Human voice evaluation remains open.
+**Status:** Superseded by Decision 0027. The implementation was removed from Duet; this entry remains historical evidence.
 
 ### Context
 
@@ -945,6 +945,28 @@ Verification: the exact family-change and later-price-question sequence is encod
 the full suite passes with **157 tests**, Ruff passes on all touched files, and a real Sarvam → Gemini →
 Sarvam controlled-duplex smoke passed at **2,058 ms** speech-end→first-audio and **233 ms**
 caller-audio-start→playback-cancel. The local demo was restarted with the fix.
+
+## 0027 — 2026-08-23 — Keep Duet single-purpose; move personal learning outside the repository
+
+**Status:** Accepted and implemented. Decision 0014 is superseded.
+
+The Hermes spoken-recall experiment proved that Duet's audio and turn-taking components could support
+another domain, but embedding that product inside this repository created the wrong boundary. It added a
+second persona, persistence model, UI, grading contract and CLI mode to a repository whose public thesis is
+an interruptible real-estate voice agent. That increased session-controller coupling, widened the test
+surface and made the README's product identity ambiguous.
+
+Duet now contains one product runtime: Aira for the ASBL real-estate sales scenario. The Hermes adapter,
+grading endpoint, browser panel, CLI flags, tests and dedicated product document were removed. The separate
+personal-learning repository may later depend on a versioned Duet session protocol or package; it must not
+reach into Duet's server internals or contribute its domain storage to this repository. Historical entries
+remain in this journal so the experiment is not erased or misrepresented.
+
+The architecture document was rebuilt as a GitHub-renderable Mermaid dossier covering system context,
+concurrent runtime lanes, normal-turn and barge-in sequences, interruption state, generation ownership,
+grounding and action truth, trust boundaries, observability, current deployment and production target.
+Implemented and future components are labeled separately. Removing the unrelated domain reduced the focused
+unit/flow suite from 157 to **141 tests**; this is deleted scope, not lost coverage of the sales agent.
 
 ## Running spend
 

@@ -1,4 +1,3 @@
-import datetime as dt
 import importlib
 import queue
 import sys
@@ -9,60 +8,12 @@ from types import SimpleNamespace
 
 from duet_agent import persona
 from duet_agent.actions import ActionRequest, ActionResult
-from duet_agent.hermes import RecallDeck, TutorSession
 from duet_agent.reasoning import Guidance, SpeechPreview
 
 WEB_DEMO = Path(__file__).resolve().parents[2] / "web-demo"
 sys.path.insert(0, str(WEB_DEMO))
 
 Session = importlib.import_module("server").Session
-
-
-def _session():
-    deck = RecallDeck(
-        root=Path("/tmp/hermes-test"),
-        slug="test",
-        title="Test",
-        due_at=dt.date(2026, 8, 2),
-        questions=("Question one?", "Question two?"),
-        study_material="",
-    )
-    session = Session.__new__(Session)
-    session.args = SimpleNamespace(hermes_remote_grading=False, voice_stack="open", mode="hermes")
-    session.tutor = TutorSession(deck)
-    session.capture = None
-    spoken = []
-    events = []
-    session.speak = spoken.append
-    session.emit = lambda **event: events.append(event)
-    return session, spoken, events
-
-
-def test_explicit_give_up_advances_without_silent_grade_gate():
-    session, spoken, _events = _session()
-
-    session._accept_transcript("I don't know the answer.", 200, [], None)
-
-    assert session.tutor.index == 1
-    assert session.tutor.pending_answer is None
-    assert "Next question: Question two?" in spoken[-1]
-
-
-def test_normal_answer_prompts_for_and_accepts_spoken_self_grade():
-    session, spoken, events = _session()
-    history = []
-
-    session._accept_transcript("The server is the resource server.", 200, history, None)
-
-    assert session.tutor.pending_answer is not None
-    assert "How would you grade it" in spoken[-1]
-    assert any(event["type"] == "tutor_answer" for event in events)
-
-    session._accept_transcript("That was correct.", 180, history, None)
-
-    assert session.tutor.index == 1
-    assert session.tutor.pending_answer is None
-    assert "Next question: Question two?" in spoken[-1]
 
 
 def test_barge_in_cancels_current_and_buffered_speech():
@@ -89,7 +40,6 @@ def test_barge_in_cancels_current_and_buffered_speech():
 def _sdr_session():
     session = Session.__new__(Session)
     session.args = SimpleNamespace(mode="sdr", barge_in=False)
-    session.tutor = None
     session.capture = None
     session.sdr_permission = "pending"
     session.sdr_opted_out = False

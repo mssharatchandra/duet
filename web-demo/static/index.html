@@ -54,22 +54,6 @@
   .disclosure a { color:#c9baff; }
   @media (max-width:780px) { #cols { grid-template-columns:1fr; } #pipeline { grid-template-columns:repeat(2,1fr); } }
 
-  #tutorPanel { display:none; width:min(980px,100%); background:linear-gradient(135deg,#171d2a,#161b22);
-                border:1px solid #3b4d72; border-radius:12px; padding:16px; margin-bottom:14px; }
-  #tutorPanel.on { display:block; }
-  #tutorPanel h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:#9db8f5; }
-  #tutorTitle { font-size:18px; font-weight:650; margin:3px 0 8px; }
-  #tutorQuestion { font-size:16px; margin:10px 0; }
-  #tutorAnswer { color:var(--you); font-size:13px; margin:8px 0; }
-  #tutorPrivacy, #tutorProgress, #tutorSaveStatus { color:var(--dim); font-size:12px; }
-  #gradeControls { display:none; gap:8px; margin-top:12px; flex-wrap:wrap; }
-  #gradeControls.on { display:flex; }
-  #gradeControls button, #recordReview { padding:7px 13px; border-radius:8px; font-size:13px; }
-  #gradeControls button[data-grade="partial"] { background:#d29922; color:#2e2100; }
-  #gradeControls button[data-grade="incorrect"], #gradeControls button[data-grade="skip"] { background:#f85149; color:#310606; }
-  #recordReview { display:none; margin-top:12px; background:#9db8f5; color:#10182a; }
-  #recordReview.on { display:inline-block; }
-
   /* -- session capture (opt-in ASR eval recording) -------------------------- */
   #captureRow { width:min(980px,100%); background:var(--panel); border:1px solid var(--line);
                 border-radius:10px; padding:12px 14px; margin-bottom:14px;
@@ -135,23 +119,6 @@
     <a href="https://asbl.in/broadway/landing/apartments-for-sale-in-hyderabad/" target="_blank" rel="noreferrer">official landing page</a>,
     and the supplied CEO keynote.</div>
 
-  <section id="tutorPanel">
-    <h2>Hermes spoken recall</h2>
-    <div id="tutorTitle"></div>
-    <div id="tutorProgress"></div>
-    <div id="tutorQuestion"></div>
-    <div id="tutorAnswer"></div>
-    <div id="gradeControls">
-      <button data-grade="correct">Correct</button>
-      <button data-grade="partial">Partial</button>
-      <button data-grade="incorrect">Incorrect</button>
-      <button data-grade="skip">Skip</button>
-    </div>
-    <button id="recordReview">Record this review in Hermes</button>
-    <div id="tutorSaveStatus"></div>
-    <div id="tutorPrivacy"></div>
-  </section>
-
   <div id="cols">
     <div class="col"><h2>Conversation</h2><div id="feed"></div></div>
     <div class="col"><h2>Live decision trace and sources</h2>
@@ -175,7 +142,6 @@ let ws, ctx, playerNode;
 let duetLine = null, youInterim = null, lastDuetUtterance = null;
 let capturing = false, sessionId = null;
 let capturedUtterances = [];  // [{utterance_id, asr_hypothesis, duration_s}]
-let tutorSessionId = null, tutorGrading = null;
 let latency = { asr: null, brain: null, tts: null };
 
 function renderLatency() {
@@ -281,44 +247,12 @@ async function saveCorrections() {
 }
 $("saveCorrections").onclick = saveCorrections;
 
-for (const button of document.querySelectorAll("#gradeControls button[data-grade]")) {
-  button.onclick = () => {
-    if (!ws || ws.readyState !== 1) return;
-    ws.send(JSON.stringify({ type: "tutor_grade", verdict: button.dataset.grade }));
-    $("gradeControls").classList.remove("on");
-  };
-}
-
-$("recordReview").onclick = async () => {
-  if (!tutorSessionId) return;
-  $("recordReview").disabled = true;
-  $("tutorSaveStatus").textContent = "recording through Hermes' review command…";
-  try {
-    const resp = await fetch("/hermes/review", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: tutorSessionId, confirm: true }),
-    });
-    const body = await resp.json();
-    if (!resp.ok || !body.ok) throw new Error(body.error || `HTTP ${resp.status}`);
-    $("tutorSaveStatus").textContent = `Recorded. Next review: ${body.review.due_at}.`;
-    $("recordReview").classList.remove("on");
-  } catch (e) {
-    $("tutorSaveStatus").textContent = "⚠ record failed: " + e.message;
-    $("recordReview").disabled = false;
-  }
-};
-
 async function start() {
   $("go").disabled = true;
   $("captureCheckbox").disabled = true;
   $("review").classList.remove("on");
   capturedUtterances = [];
   sessionId = null;
-  tutorSessionId = null;
-  $("tutorPanel").classList.remove("on");
-  $("gradeControls").classList.remove("on");
-  $("recordReview").classList.remove("on");
   $("status").textContent = "requesting microphone…";
   const media = await navigator.mediaDevices.getUserMedia({ audio: {
     echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }});
@@ -490,32 +424,6 @@ async function start() {
       } else if (ev.state === "interrupted") {
         playerNode.port.postMessage({ type: "speech_end" });
         setPipe("pipe-tts", "done", "yielded to your interruption");
-      }
-    }
-    else if (ev.type === "tutor_setup") {
-      tutorSessionId = ev.session_id;
-      tutorGrading = ev.grading;
-      $("tutorPanel").classList.add("on");
-      $("tutorTitle").textContent = ev.title;
-      $("tutorProgress").textContent = `0/${ev.total} answered · due ${ev.due_at} · ${ev.grading === "self" ? "self-grade" : "Gemini grade"}`;
-      $("tutorQuestion").textContent = ev.question;
-      $("tutorPrivacy").textContent = ev.privacy;
-      document.querySelector("h1").textContent = "Hermes Voice";
-      document.querySelector(".sub").textContent = "interruptible spoken recall over your reviewed second brain";
-    }
-    else if (ev.type === "tutor_answer") {
-      $("tutorAnswer").textContent = `You answered: “${ev.text}”`;
-      if (tutorGrading === "self") $("gradeControls").classList.add("on");
-    }
-    else if (ev.type === "tutor_progress") {
-      $("gradeControls").classList.remove("on");
-      $("tutorAnswer").textContent = ev.feedback;
-      $("tutorProgress").textContent = `${ev.attempted}/${ev.total} answered · ${ev.correct} strictly correct`;
-      if (ev.complete) {
-        $("tutorQuestion").textContent = "Review complete. Check the score, then choose whether to record it in Hermes.";
-        $("recordReview").classList.add("on");
-      } else {
-        $("tutorQuestion").textContent = `Next: ${ev.next_question}`;
       }
     }
   };

@@ -8,8 +8,8 @@ browser mic -> Sarvam realtime VAD + true Saaras interim/final ASR
             -> persistent Sarvam Bulbul WebSocket TTS -> browser speaker
 ```
 
-Without a Sarvam key it falls back to the fully local Silero VAD -> Parakeet
-MLX -> Hermes -> Piper path. The default remains guarded half-duplex. The live
+Without a Sarvam key it falls back to the local Silero VAD -> Parakeet MLX ->
+Gemini -> Piper path. The default remains guarded half-duplex. The live
 presentation launcher enables **controlled barge-in**: browser echo cancellation
 keeps the Sarvam stream live while Duet speaks, and provider speech-start cancels
 TTS on the provider, server and browser. The final transcript then resolves whether
@@ -38,53 +38,6 @@ Set up the isolated voice runtime once:
 The separate `web-demo/.venv` is intentional. Moshi 0.3 pins an old
 `huggingface-hub`, while current Parakeet MLX requires a new one; forcing both
 into one environment produces an unsatisfiable dependency graph.
-
-## Hermes Voice v0
-
-From the Duet repository root, with `hermes-brain` checked out beside it:
-
-```bash
-web-demo/.venv/bin/python web-demo/server.py --mode hermes
-```
-
-Open <http://localhost:8990>, press **Start talking**, answer each due recall
-question, and self-grade it. With Sarvam enabled, microphone audio is sent to
-Sarvam for transcription and tutor text is sent to Sarvam for speech. Hermes'
-source article is not sent to Sarvam, and it is not sent to Gemini unless you
-explicitly enable remote grading. At the end, the score is written only after
-you press **Record this review in Hermes**. The server delegates that write to
-`hermes-brain/scripts/brain.py review` and verifies the new event before
-reporting success.
-
-Useful options:
-
-```bash
-# Keep all ASR and TTS processing on this Mac
-web-demo/.venv/bin/python web-demo/server.py --mode hermes \
-  --asr parakeet --tts-backend piper
-
-# Sarvam recognition modes: transcribe, verbatim, or codemix
-web-demo/.venv/bin/python web-demo/server.py --mode hermes \
-  --sarvam-mode codemix --sarvam-language en-IN
-
-# Wait a little longer across thinking pauses before committing a turn
-web-demo/.venv/bin/python web-demo/server.py --mode hermes --turn-grace-ms 650
-
-# Practice a particular approved run, even if it is not due
-web-demo/.venv/bin/python web-demo/server.py --mode hermes \
-  --hermes-run oauth-2-1-pkce-for-remote-mcp-agents
-
-# Exercise the UI and loader without spoken output
-web-demo/.venv/bin/python web-demo/server.py --mode hermes --voice-stack none
-
-# Explicit privacy trade-off: send the reviewed article and answers to Gemini
-# for automatic grading. The page displays this disclosure during the session.
-web-demo/.venv/bin/python web-demo/server.py --mode hermes --hermes-remote-grading
-```
-
-Set `HERMES_BRAIN_PATH` or pass `--hermes-root` when the repositories are not
-siblings. Only Hermes runs whose manifest status is `approved` or `published`
-can be loaded.
 
 The page shows live recognition state, the turn-continuation grace period,
 recognition time, and playback pause state. Local mode also shows room
