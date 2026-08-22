@@ -886,7 +886,7 @@ The SIP, browser and eventual PSTN adapters must share one Duet session contract
 
 ## 0025 — 2026-08-23 — Instrument the live call path without putting telemetry on the audio critical path
 
-**Status:** Implemented and locally verified; hosted CI verification awaits this commit.
+**Status:** Implemented and verified locally and in hosted CI.
 
 The previous stack proved benchmark instrumentation but left the actual browser call opaque. Every live
 session now creates one correlation identity shared by Langfuse, Prometheus, Loki and Postgres. Reasoning
@@ -916,7 +916,9 @@ Gemini, TTS and cancellation at **2,046 ms** final-speech-end→first-audio and 
 caller-audio-start→playback-cancel. The same trace ID was found in the redacted JSON event log, Langfuse and
 the Postgres call summary; Prometheus scraped live metrics into Grafana; and Alloy shipped the redacted JSON
 event into Loki. That run exposed and fixed a small-sample percentile defect where p95 could fall below p50.
-CI repeats the ingestion checks once pushed. No new paid service or cloud resource was created beyond trivial
+Hosted [correctness CI](https://github.com/mssharatchandra/duet/actions/runs/32599865853) and the full
+[infrastructure smoke](https://github.com/mssharatchandra/duet/actions/runs/32599865852) passed, including
+Alloy → Loki and Postgres ingestion. No new paid service or cloud resource was created beyond trivial
 already-approved API use.
 
 Primary references: [Graphify docs](https://graphify.com/docs), [ElevenLabs OpenTelemetry trace
