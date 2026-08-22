@@ -49,7 +49,7 @@ Teams running cascaded voice-AI pipelines in production (outbound sales, lead qu
 | [`/eval`](eval/) | Benchmark harness, Takeover Rate metric, cascaded baseline |
 | [`/infra`](infra/) | Docker Compose stack: LiveKit OSS, Langfuse, Prometheus, Grafana, Postgres, Caddy |
 | [`/web-demo`](web-demo/) | Aira property-concierge demo and Hermes spoken-recall mode |
-| [`/docs`](docs/) | [The 80/20 voice-AI blog](docs/blog/voice-ai-the-80-20.md) · [DECISIONS.md](docs/DECISIONS.md) (journal) · [LEARNING.md](docs/LEARNING.md) (curriculum) |
+| [`/docs`](docs/) | [Architecture](docs/ARCHITECTURE.md) · [The 80/20 voice-AI blog](docs/blog/voice-ai-the-80-20.md) · [DECISIONS.md](docs/DECISIONS.md) (journal) · [LEARNING.md](docs/LEARNING.md) (curriculum) |
 
 ## License
 

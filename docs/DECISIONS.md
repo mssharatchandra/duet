@@ -826,6 +826,31 @@ Primary references: [Sarvam realtime STT](https://docs.sarvam.ai/api/api-guides-
 [MLX-LM streaming generation](https://github.com/ml-explore/mlx-lm), and
 [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B).
 
+## 0023 — 2026-08-23 — A barge-in must produce a conversational state, not merely silence
+
+**Status:** Implemented locally; second human acoustic trial remains the acceptance gate.
+
+The next trial found that playback cancellation worked but did not always feel successful. “Wait a
+minute” cancelled Aira and was classified as `wait`, whose intentionally empty talking point left
+the caller unsure whether the system was alive. Acoustic floor ownership and semantic intent are
+now separate: pause requests get a short acknowledgment, presence checks confirm that Aira is
+listening, vague fragments ask whether to stop or clarify, and complete questions continue through
+normal grounded reasoning. None of these deterministic branches call Gemini.
+
+Intermittent voice glitches were also consistent with cumulative frame pacing: the old loop waited
+80 ms *after* provider and scheduling work on every frame. Playback now follows an absolute clock
+and catches up bounded jitter. The browser starts with a 240 ms jitter cushion and increases it up
+to 400 ms only after a measured underrun. This deliberately spends 80 ms more than the previous
+buffer because the user preferred smoothness over the already-acceptable latency.
+
+The public deployment architecture is now explicit in `docs/ARCHITECTURE.md`. The current CPU-side
+orchestrator can run on a VPS because Gemini and Sarvam host inference, but public browser or phone
+deployment still requires per-call session isolation, TLS/WSS, authentication, persistent
+consent/DNC and call audit, rate/session limits, a telephony media adapter and human-transfer path.
+Exotel AgentStream is the recommended India-first transport; Twilio or Plivo remain portable
+alternatives. Real outbound dialing remains blocked until ASBL's registered calling and consent
+process is connected.
+
 ## Running spend
 
 | Date | Item | Cost | Total |

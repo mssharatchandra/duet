@@ -153,9 +153,10 @@ OPENING = (
 OPT_OUT_ACK = "Of course. I'll stop here, and this demo will not continue or place another call. Take care."
 NOT_NOW_ACK = "No problem. I'll stop here; an ASBL advisor can follow up only at a time you prefer."
 INTERRUPTION_CLARIFICATION = (
-    "I heard that you changed your mind. Should I stop the conversation, "
-    "or did you want to change one preference?"
+    "Of course—did you want me to stop, or were you trying to ask something?"
 )
+PAUSE_ACK = "Of course. Take your time—I'm here when you're ready."
+PRESENCE_ACK = "Yes, I'm here—and I'm listening. What would you like me to clarify?"
 SENSITIVE_PROFILE_ACK = (
     "I won't use religion or other sensitive traits to judge whether you may buy. "
     "I can only use needs you explicitly choose to share."
@@ -219,6 +220,15 @@ _BACKCHANNELS = {
     "hm", "hmm", "mm", "mhm", "uh huh", "aha", "okay", "ok", "right", "got it", "i see",
 }
 _EXPLICIT_INTERRUPTS = re.compile(r"\b(wait|stop|hold on|actually|no|sorry|one second)\b", re.IGNORECASE)
+_PAUSE_REQUEST = re.compile(
+    r"\b(wait(?: a (?:minute|moment))?|hold on|one second|give me (?:a )?(?:minute|moment)|"
+    r"take a (?:minute|moment)|pause)\b",
+    re.IGNORECASE,
+)
+_PRESENCE_CHECK = re.compile(
+    r"\b(are you (?:there|talking|listening)|can you hear me|hello,? are you there)\b",
+    re.IGNORECASE,
+)
 _UNAVAILABLE_ACTION = re.compile(
     r"\b(i(?:'ll| will) (?:send|share|arrange|schedule|book|have|update|mark)|i have (?:sent|shared|arranged|scheduled|booked|updated|marked)|(?:an? )?(?:advisor|team) will (?:call|contact|send|share|reach out))\b",
     re.IGNORECASE,
@@ -252,6 +262,26 @@ def normalize_domain_terms(text: str) -> str:
 def is_backchannel(text: str) -> bool:
     """True for listener continuers that should not launch a new sales turn."""
     return " ".join(normalized_words(text)) in _BACKCHANNELS
+
+
+def is_pause_request(text: str) -> bool:
+    """A floor-yield request deserves acknowledgment, not an empty bot turn."""
+    return bool(_PAUSE_REQUEST.search(text))
+
+
+def is_presence_check(text: str) -> bool:
+    """Detect a caller checking that an interrupted agent is still connected."""
+    return bool(_PRESENCE_CHECK.search(text))
+
+
+def needs_interruption_clarification(text: str) -> bool:
+    """True when a barge-in changed the floor but did not communicate a usable intent."""
+    if is_pause_request(text) or is_presence_check(text) or is_opt_out(text):
+        return False
+    words = normalized_words(text)
+    return is_ambiguous_change(text) or (
+        len(words) <= 3 and any(word in {"actually", "no", "sorry", "wait"} for word in words)
+    )
 
 
 def is_sensitive_profiling_request(text: str) -> bool:

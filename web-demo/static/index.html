@@ -330,7 +330,13 @@ async function start() {
   playerNode = new AudioWorkletNode(ctx, "player-processor");
   mic.connect(micNode);
   playerNode.connect(ctx.destination);
-  playerNode.port.onmessage = (e) => glow($("orb-duet"), e.data);
+  playerNode.port.onmessage = (e) => {
+    if (typeof e.data === "number") {
+      glow($("orb-duet"), e.data);
+    } else if (e.data && e.data.type === "underrun") {
+      $("asrStatus").textContent = `audio jitter absorbed · playback buffer now ${e.data.prebuffer * 80} ms`;
+    }
+  };
 
   const wsScheme = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${wsScheme}://${location.host}/ws`);
@@ -471,12 +477,20 @@ async function start() {
       }
     }
     else if (ev.type === "tts_state") {
-      if (ev.state === "speaking") setPipe("pipe-tts", "active", `synthesizing with ${ev.backend}`);
+      if (ev.state === "speaking") {
+        playerNode.port.postMessage({ type: "speech_start" });
+        setPipe("pipe-tts", "active", `synthesizing with ${ev.backend}`);
+      }
       else if (ev.state === "first_audio") {
         latency.tts = ev.latency_ms; renderLatency();
         setPipe("pipe-tts", "active", `first audio in ${ev.latency_ms} ms`);
-      } else if (ev.state === "listening") setPipe("pipe-tts", "done", "finished cleanly; listening again");
-      else if (ev.state === "interrupted") setPipe("pipe-tts", "done", "yielded to your interruption");
+      } else if (ev.state === "listening") {
+        playerNode.port.postMessage({ type: "speech_end" });
+        setPipe("pipe-tts", "done", "finished cleanly; listening again");
+      } else if (ev.state === "interrupted") {
+        playerNode.port.postMessage({ type: "speech_end" });
+        setPipe("pipe-tts", "done", "yielded to your interruption");
+      }
     }
     else if (ev.type === "tutor_setup") {
       tutorSessionId = ev.session_id;

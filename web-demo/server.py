@@ -340,6 +340,8 @@ class Session:
                 first_audio = True
                 audio_chunks = voice.synthesize_stream(text)
                 frames = tts.iter_pcm_frames(audio_chunks, FRAME)
+                frame_period = FRAME / 24_000
+                next_frame_at = time.perf_counter()
                 for frame in frames:
                     if self.cancel_speech.is_set():
                         break
@@ -360,9 +362,16 @@ class Session:
                             break
                         except queue.Full:
                             continue
-                    # The browser player consumes at this rate. Pacing here prevents
-                    # its bounded jitter buffer from dropping a long TTS response.
-                    time.sleep(FRAME / 24_000)
+                    # Pace against an absolute clock. Sleeping a full frame after
+                    # every provider read compounds socket and scheduler delay and
+                    # creates browser underruns; this catches that time up without
+                    # dumping an entire utterance into the client buffer.
+                    next_frame_at += frame_period
+                    now = time.perf_counter()
+                    if next_frame_at < now - (3 * frame_period):
+                        next_frame_at = now
+                    elif next_frame_at > now:
+                        time.sleep(next_frame_at - now)
             except Exception as e:
                 self.emit(type="error", text=f"TTS failed: {type(e).__name__}: {e}")
             finally:
@@ -609,6 +618,41 @@ class Session:
                 return
             if self.sdr_permission != "granted":
                 return
+            # Acoustic barge-in and semantic intent are separate decisions. A
+            # caller asking for a moment should hear that Aira yielded; a vague
+            # fragment must be clarified; a complete question can proceed to
+            # the planner normally. Silence after a successful cancellation is
+            # technically correct but conversationally broken.
+            if getattr(self, "barge_in_pending", False):
+                self.barge_in_pending = False
+                if persona.is_pause_request(text):
+                    self.speak(persona.PAUSE_ACK)
+                    history.append(("agent", persona.PAUSE_ACK))
+                    self.emit(
+                        type="policy",
+                        state="interruption_acknowledged",
+                        text="Aira yielded and acknowledged the caller's pause request",
+                    )
+                    return
+                if persona.is_presence_check(text):
+                    self.speak(persona.PRESENCE_ACK)
+                    history.append(("agent", persona.PRESENCE_ACK))
+                    self.emit(
+                        type="policy",
+                        state="presence_confirmed",
+                        text="Aira confirmed the connection without restarting the pitch",
+                    )
+                    return
+                if persona.needs_interruption_clarification(text):
+                    self.sdr_clarification_pending = True
+                    self.speak(persona.INTERRUPTION_CLARIFICATION)
+                    history.append(("agent", persona.INTERRUPTION_CLARIFICATION))
+                    self.emit(
+                        type="policy",
+                        state="clarification_required",
+                        text="Vague barge-in changed the floor but not the conversational intent",
+                    )
+                    return
             if persona.is_ambiguous_change(text):
                 self.sdr_clarification_pending = True
                 self.barge_in_pending = False

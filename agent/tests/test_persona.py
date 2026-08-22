@@ -82,6 +82,15 @@ def test_trial_opt_out_language_and_ambiguous_change_are_distinct():
     assert persona.clarification_response("Keep going, I want to change my preference") == "continue"
 
 
+def test_interruption_semantics_distinguish_pause_presence_and_vague_change():
+    assert persona.is_pause_request("Wait a minute, please")
+    assert persona.is_pause_request("Hold on")
+    assert persona.is_presence_check("Are you talking?")
+    assert persona.needs_interruption_clarification("Actually, no")
+    assert not persona.needs_interruption_clarification("Wait a minute")
+    assert not persona.needs_interruption_clarification("Tell me about the current price")
+
+
 def test_stable_partial_must_preserve_final_meaning():
     assert persona.partial_matches_final(
         "I want a family home near Financial District",

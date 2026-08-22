@@ -9,11 +9,11 @@ from types import SimpleNamespace
 WEB_DEMO = Path(__file__).resolve().parents[2] / "web-demo"
 sys.path.insert(0, str(WEB_DEMO))
 
-from server import Session
+from server import Session  # noqa: E402 - web-demo path is added explicitly above
 
-from duet_agent.actions import ActionRequest, ActionResult
-from duet_agent.hermes import RecallDeck, TutorSession
-from duet_agent.reasoning import Guidance, SpeechPreview
+from duet_agent.actions import ActionRequest, ActionResult  # noqa: E402
+from duet_agent.hermes import RecallDeck, TutorSession  # noqa: E402
+from duet_agent.reasoning import Guidance, SpeechPreview  # noqa: E402
 
 
 def _session():
@@ -167,9 +167,60 @@ def test_ambiguous_barge_in_clarifies_without_calling_reasoning():
     session._accept_transcript("I just changed my mind, yeah yeah.", 80, [], brain)
 
     assert session.sdr_clarification_pending
-    assert "Should I stop" in spoken[-1]
+    assert "want me to stop" in spoken[-1]
     assert not brain.called
     assert any(event.get("state") == "clarification_required" for event in events)
+
+
+def test_pause_barge_in_is_acknowledged_without_calling_reasoning():
+    session, spoken, events = _sdr_session()
+    session.sdr_permission = "granted"
+    session.barge_in_pending = True
+
+    class Brain:
+        called = False
+
+        def request(self, *_args):
+            self.called = True
+
+    brain = Brain()
+    session._accept_transcript("Uh, wait a minute.", 80, [], brain)
+
+    assert "Take your time" in spoken[-1]
+    assert not session.barge_in_pending
+    assert not brain.called
+    assert any(event.get("state") == "interruption_acknowledged" for event in events)
+
+
+def test_vague_barge_in_asks_what_caller_meant():
+    session, spoken, events = _sdr_session()
+    session.sdr_permission = "granted"
+    session.barge_in_pending = True
+
+    class Brain:
+        called = False
+
+        def request(self, *_args):
+            self.called = True
+
+    brain = Brain()
+    session._accept_transcript("Actually, no.", 80, [], brain)
+
+    assert "trying to ask" in spoken[-1]
+    assert session.sdr_clarification_pending
+    assert not brain.called
+    assert any(event.get("state") == "clarification_required" for event in events)
+
+
+def test_presence_check_after_barge_in_gets_a_human_acknowledgment():
+    session, spoken, _events = _sdr_session()
+    session.sdr_permission = "granted"
+    session.barge_in_pending = True
+
+    session._accept_transcript("Are you talking?", 80, [], None)
+
+    assert "I'm here" in spoken[-1]
+    assert "listening" in spoken[-1]
 
 
 def test_speech_start_yields_before_transcript_and_marks_pending_interruption():
