@@ -25,7 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uvx ruff check agent
+      - name: Ruff (repository-pinned version)
+        run: >-
+          uvx --from 'ruff==0.15.20' ruff check
+          agent web-demo/server.py scripts/smoke-live-demo.py
+          eval/reasoning/run_eval.py
 
   unit:
     strategy:
