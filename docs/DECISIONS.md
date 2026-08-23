@@ -1014,6 +1014,14 @@ eval now runs daily or on manual dispatch, paced eight seconds between requests.
 in with `RUN_LIVE_EVAL_ON_PUSH`. A process-local VPS limiter cannot coordinate quota with GitHub Actions, so
 that remaining project-wide concurrency risk is explicit rather than hidden.
 
+Hosted infrastructure CI then exposed a multi-network binding defect. Langfuse's Next.js process inherited
+Docker's generated `HOSTNAME`; after joining both networks it listened only on the backplane address while
+the published host port forwarded through the Compose-default address. The process logged “ready” but health
+requests reset. A local reproduction confirmed the listening socket, and explicit `HOSTNAME=0.0.0.0` restores
+both paths. Both Langfuse images are also pinned to the locally verified 3.205.1 release; CI probes Langfuse
+before starting the second stack and emits diagnostics on failure. Production upgrades must be deliberate
+compatibility changes, not surprise pulls.
+
 ## Running spend
 
 | Date | Item | Cost | Total |

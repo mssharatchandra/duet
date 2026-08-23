@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Start stacks
+      - name: Start Langfuse stack
         working-directory: infra
         run: |
           cp .env.example .env
@@ -27,7 +27,6 @@ jobs:
           touch ../.local/telemetry/ci.jsonl
           docker network create duet-backplane
           docker compose -p langfuse -f langfuse-compose.yml up -d --quiet-pull
-          docker compose -p duet-obs -f observability-compose.yml up -d --quiet-pull
       - name: Langfuse healthy
         run: |
           for i in $(seq 1 60); do
@@ -41,6 +40,9 @@ jobs:
             -d "{\"batch\":[{\"id\":\"$(uuidgen)\",\"type\":\"trace-create\",\"timestamp\":\"$(date -u +%FT%T.000Z)\",\"body\":{\"id\":\"$(uuidgen)\",\"name\":\"ci-smoke\"}}]}" \
             http://localhost:3000/api/public/ingestion)
           cat /tmp/resp; [ "$code" = "207" ]
+      - name: Start metrics, logs and call database
+        working-directory: infra
+        run: docker compose -p duet-obs -f observability-compose.yml up -d --quiet-pull
       - name: Grafana provisioned with Duet datasources
         run: |
           for i in $(seq 1 30); do curl -sf http://localhost:3001/api/health && break; sleep 3; done
@@ -67,3 +69,11 @@ jobs:
                                    'duration_s': 1.0, 'takeover_rate': 0.0})
           assert ok, 'insert failed'
           print('postgres write OK')"
+      - name: Failure diagnostics
+        if: failure()
+        run: |
+          docker stats --no-stream || true
+          docker compose -p langfuse -f infra/langfuse-compose.yml ps || true
+          docker compose -p langfuse -f infra/langfuse-compose.yml logs --tail 120 || true
+          docker compose -p duet-obs -f infra/observability-compose.yml ps || true
+          docker compose -p duet-obs -f infra/observability-compose.yml logs --tail 120 || true
