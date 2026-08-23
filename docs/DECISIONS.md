@@ -1022,6 +1022,16 @@ both paths. Both Langfuse images are also pinned to the locally verified 3.205.1
 before starting the second stack and emits diagnostics on failure. Production upgrades must be deliberate
 compatibility changes, not surprise pulls.
 
+The first hosted rerun cleared Langfuse health and ingestion, then exposed stale CI probe credentials:
+Grafana and Duet Postgres had correctly consumed the rotated example values while the probes still assumed
+the former literal `duet`. Probes now read the same untracked CI environment file as Compose. This is a test
+fixture correction; production credentials remain external and are never copied into workflow YAML.
+
+The workflow actions were upgraded to their current releases at review time and pinned to immutable commit
+SHAs (checkout v7.0.1, setup-python v7.0.0, setup-uv v10.0.1). Infrastructure tests now explicitly select
+Python 3.12 instead of inheriting a mutable runner default. This removes Node-runtime deprecation warnings and
+reduces third-party action supply-chain drift while keeping the human-readable release tag in comments.
+
 ## Running spend
 
 | Date | Item | Cost | Total |

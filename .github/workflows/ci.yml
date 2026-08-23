@@ -23,8 +23,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Ruff (repository-pinned version)
         run: >-
           uvx --from 'ruff==0.15.20' ruff check
@@ -45,8 +45,8 @@ jobs:
             full-install: true
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Create venv
         working-directory: agent
         run: uv venv --python 3.12
@@ -70,7 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build production web image
         run: docker build --file web-demo/Dockerfile --tag duet-web:ci .
       - name: Boot as non-root and pass health checks
@@ -80,7 +80,7 @@ jobs:
             --env GEMINI_API_KEY=ci-placeholder \
             --env SARVAM_API_KEY=ci-placeholder \
             duet-web:ci
-          for i in $(seq 1 30); do
+          for _attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:8990/healthz >/tmp/health.json; then
               cat /tmp/health.json
               curl --fail --silent http://127.0.0.1:8990/readyz
@@ -110,8 +110,8 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GEMINI_EVAL_MIN_INTERVAL_SECONDS: "8"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Golden eval (gate ≥90%)
