@@ -7,7 +7,7 @@ Duet treats evals as the executable product specification. A change is not an im
 | Suite | Command | Measures | Status |
 |---|---|---|---|
 | Unit and interaction flow | `agent/.venv/bin/pytest -q agent/tests` | Turn assembly, interruption policy, actions, ASR/TTS adapters, reasoning contracts | CI gate |
-| Live reasoning golden set | `python eval/reasoning/run_eval.py` | 17 ASBL scenarios: intent, content, grounding, objections and forbidden behavior | Push CI gate at ≥90%; uses Gemini API |
+| Live reasoning golden set | `python eval/reasoning/run_eval.py` | 17 ASBL scenarios: intent, content, grounding, objections and forbidden behavior | Paced daily/manual CI gate at ≥90%; uses Gemini API |
 | End-to-end synthetic caller | `web-demo/.venv/bin/python scripts/smoke-live-demo.py` | Browser protocol, realtime ASR, reasoning, TTS, playback and barge-in cancellation | Manual real-service smoke |
 | ASR discrimination | `agent/.venv/bin/python eval/asr/run_asr_eval.py --augment ...` | WER and real-time factor under noise, reverb and speed changes | Implemented; synthetic speech limitations |
 | TTS benchmark | `agent/.venv/bin/python eval/tts/bench_tts.py` | Time to first audio, real-time factor and load time | Implemented; does not measure naturalness |

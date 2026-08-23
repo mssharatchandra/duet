@@ -1,0 +1,7 @@
+# Linux/VPS runtime only. MLX, Moshi, Parakeet and local TTS intentionally stay
+# out of this image: the deploy profile uses hosted streaming ASR/TTS and keeps
+# Apple-Silicon research dependencies in the native development environment.
+aiohttp>=3.10,<4
+numpy>=2,<3
+psycopg[binary]>=3.2,<4
+sarvamai>=0.1.28,<1

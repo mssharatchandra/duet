@@ -968,6 +968,52 @@ grounding and action truth, trust boundaries, observability, current deployment 
 Implemented and future components are labeled separately. Removing the unrelated domain reduced the focused
 unit/flow suite from 157 to **141 tests**; this is deleted scope, not lost coverage of the sales agent.
 
+## 0028 — 2026-08-23 — Containerize the cloud voice path and reject quota pressure off the live path
+
+**Status:** Implemented locally; VPS deployment awaits operator DNS/host access and a reviewed deploy.
+
+The production-shaped image contains only Linux dependencies required by the cloud path: aiohttp, NumPy,
+Sarvam's SDK and Postgres. MLX, Moshi, Parakeet and local TTS remain in the Apple-Silicon research environment.
+This keeps the VPS CPU image reproducible and avoids pretending Mac GPU packages are portable Linux runtime
+dependencies. The native launcher remains the fastest local iteration path.
+
+Provider protection is two-layered. WebSocket admission enforces configurable per-IP hourly/daily limits before
+creating an expensive session. Every Gemini request then acquires a process-wide rolling RPM, rolling-24-hour
+RPD and concurrency slot. Exhaustion fails immediately into the existing reasoning-failure path rather than
+sleeping and adding invisible conversational latency. Defaults are 8 RPM, 100 requests per rolling day and one
+in flight. They are conservative project settings, not a claim about Google's quota: Google documents that
+limits vary by model, tier and account and directs operators to active limits in AI Studio.
+
+The VPS profile runs the app as a non-root user behind Caddy HTTPS/WSS, validates browser origins and preserves
+private loopback access to observability. Langfuse and Duet remain separate lifecycle/data stacks connected by
+one private Docker network. The deployment remains single-session. Scaling workers before moving session and
+quota state to a shared atomic store would multiply the Gemini budget and risk call-state corruption.
+
+Alternatives rejected: sleeping until a quota slot opens (turn latency), depending only on Google's 429
+(poor cost/UX control), embedding MLX into the Linux image (wrong platform), exposing dashboards through Caddy
+(unnecessary attack surface), and claiming deployment without access to the VPS. No cloud resource or paid
+usage was created by this decision.
+
+Primary references: [Gemini rate limits](https://ai.google.dev/gemini-api/docs/rate-limits),
+[OpenAI's dedicated media/asynchronous delegation architecture](https://openai.com/index/continuous-voice-interaction-with-gpt-live/),
+and [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https).
+
+Verification at implementation time: Ruff and **148 tests** passed; both Compose configurations rendered;
+shell/Python syntax and documentation links passed. Docker Desktop was not running, so the image build remains
+a VPS preflight rather than a claimed success. The restarted native server reported 8 RPM, 100 rolling-day
+requests and one concurrent Gemini request. A real Sarvam → Gemini → Sarvam smoke passed at **2,169 ms** final
+speech end→first audio and **198 ms** caller-audio-start→playback-cancel. That smoke also fixed two harness
+defects: a three-second event gap incorrectly overrode the 35-second E2E deadline, and overlapping speculative
+reasoning/TTS durations were incorrectly added as a serial waterfall.
+
+Gemini quotas apply to the Google Cloud project, not to one API key. Running the 17-call probabilistic eval
+on every push could therefore consume the free daily budget after a handful of small commits and compete with
+the live demo. Every commit still runs lint, deterministic tests and the Linux production-container boot
+smoke; relevant infrastructure changes additionally boot and probe the observability stack. The live Gemini
+eval now runs daily or on manual dispatch, paced eight seconds between requests. Maintainers may opt push runs
+in with `RUN_LIVE_EVAL_ON_PUSH`. A process-local VPS limiter cannot coordinate quota with GitHub Actions, so
+that remaining project-wide concurrency risk is explicit rather than hidden.
+
 ## Running spend
 
 | Date | Item | Cost | Total |

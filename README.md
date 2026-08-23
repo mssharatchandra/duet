@@ -2,9 +2,9 @@
 
 **An open-source systems experiment in making a streaming ASR → LLM → TTS agent interruptible, grounded, auditable and humane. The concrete demo is a real-estate sales concierge for ASBL Broadway.**
 
-[Architecture](docs/ARCHITECTURE.md) · [Production readiness](docs/PRODUCTION_READINESS.md) · [Research direction](docs/RESEARCH_DIRECTION.md) · [Evaluation](eval/README.md) · [India market](docs/MARKET_ANALYSIS_INDIA.md) · [Two-day syllabus](docs/LEARNING_IN_2_DAYS.md) · [Decisions](docs/DECISIONS.md)
+[Architecture](docs/ARCHITECTURE.md) · [VPS deployment](docs/VPS_DEPLOYMENT.md) · [Code walkthrough](docs/CODE_WALKTHROUGH.md) · [Two-hour immersion](docs/VOICE_AI_IN_TWO_HOURS.md) · [Current reading](docs/READING_LIST_2026.md) · [Evaluation](eval/README.md) · [Decisions](docs/DECISIONS.md)
 
-> Project status, 23 August 2026: the local browser demo works with live Sarvam ASR/TTS and Gemini reasoning. It is a controlled-duplex, interruptible cascade—not a frontier end-to-end speech model and not production-ready. The post-separation synthetic-caller smoke measured 2.440 seconds from final speech end to first server audio and 301 ms from caller-audio start to playback cancellation; recent runs vary materially. Live sessions emit correlated Langfuse traces, Prometheus metrics, Loki logs and Postgres summaries. Human acoustic testing, multilingual evaluation, multi-session isolation and telephony remain open gates.
+> Project status, 23 August 2026: the local browser demo works with live Sarvam ASR/TTS and Gemini reasoning. It is a controlled-duplex, interruptible cascade—not a frontier end-to-end speech model and not production-ready. The latest quota-aware synthetic-caller smoke measured 2.169 seconds from final speech end to first server audio and 198 ms from caller-audio start to playback cancellation; recent runs vary materially. Live sessions emit correlated Langfuse traces, Prometheus metrics, Loki logs and Postgres summaries. Human acoustic testing, multilingual evaluation, multi-session isolation and telephony remain open gates.
 
 ## The thesis
 
@@ -101,8 +101,8 @@ See [web-demo/README.md](web-demo/README.md) for local ASR/TTS fallbacks, tuning
 
 | Surface | Implemented | Current evidence | Missing before a strong claim |
 |---|---|---|---|
-| Unit and flow correctness | Yes | 141 focused tests across turn assembly, policy, actions, ASR/TTS adapters, interaction flow and telemetry | Public multi-user and telephony integration tests |
-| LLM behavior | Yes | 17-scenario live Gemini golden set with a 90% CI gate | Larger adversarial and multilingual sets |
+| Unit and flow correctness | Yes | 148 focused tests across turn assembly, policy, quotas, actions, ASR/TTS adapters, interaction flow and telemetry | Public multi-user and telephony integration tests |
+| LLM behavior | Yes | 17-scenario paced Gemini golden set with a 90% daily/manual CI gate | Larger adversarial and multilingual sets |
 | ASR | Yes | WER-by-noise/reverb/speed matrix; Parakeet MLX leads the tested local candidates | Consent-cleared real microphone and phone audio |
 | TTS | Partial | TTFB/RTF harness for local voices; live Sarvam timings in smoke tests | Blind MOS, intelligibility and prosody ratings |
 | Duplex interaction | Partial | Synthetic interruption/cancellation smoke and Takeover Rate harness | Human overlap, false-barge and interruption-repair study |
@@ -120,7 +120,7 @@ The repository contains a self-hosted observability stack:
 - **Loki + Alloy:** structured JSONL events are tailed and shipped with shared `session_id` and `trace_id` fields.
 - **Postgres + Grafana:** one durable call summary records latency, turns, interruptions, cost and the Langfuse trace ID; a provisioned dashboard combines all three data sources.
 - **Privacy and isolation:** transcript/prompt content is hashed and length-counted by default. All export paths are bounded and asynchronous so an observability outage cannot block audio.
-- **GitHub Actions:** lints, runs 141 focused unit/flow tests, gates live Gemini behavior at 90%, boots the stack, verifies Langfuse ingestion and Grafana provisioning, ships a test log through Alloy to Loki, and writes a Postgres call row.
+- **GitHub Actions:** every commit is linted, runs 148 focused unit/flow tests and boots the Linux app container; relevant infra changes boot the stack, verify Langfuse/Grafana, ship a test log through Alloy to Loki and write a Postgres row. The project-wide-quota-consuming Gemini behavior gate runs paced daily or manually at a 90% threshold.
 
 This closes the earlier instrumentation gap; it does **not** make the service production reliable by itself. Alert routing, retention policy enforcement, distributed session execution, provider SLOs, load/chaos tests and on-call runbooks remain open.
 
@@ -169,11 +169,17 @@ Primary metrics are p50/p95 end-of-speech-to-first-audio, wrong-start and cancel
 | [`eval/`](eval/) | Reasoning, ASR, TTS, duplex and blind-human evaluation harnesses |
 | [`infra/`](infra/) | Langfuse, Postgres, Grafana, Prometheus and Loki Compose stack |
 | [`docs/`](docs/) | Architecture, decisions, research plan, product specification and learning material |
-| [`.github/workflows/`](.github/workflows/) | CI correctness, live behavior gate and observability-stack smoke tests |
+| [`graphify-out/`](docs/CODEBASE_MAP.md) | Local, gitignored derived code graph; regenerate it using the linked guide |
+| [`.github/workflows/`](.github/workflows/) | Per-commit correctness/container checks, paced live behavior gate and observability-stack smoke tests |
 
 ## Production boundary
 
-The localhost demo is single-session and unauthenticated. Public or outbound deployment requires, at minimum: one isolated session per call, TLS/WSS, authentication, durable consent and do-not-contact state, retention/deletion controls, rate limits, current fact tools, human transfer, provider failure fallbacks, load/chaos testing and an on-call operating model. The demo already has a server-side 240-second cap and live traces/metrics/logs, but those controls are only the beginning. See [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) and [docs/ASBL_VOICE_AGENT.md](docs/ASBL_VOICE_AGENT.md).
+The localhost demo is single-session and unauthenticated. The VPS profile now adds a non-root application
+image, Caddy TLS/WSS, origin checks, per-IP session admission and process-level Gemini RPM/RPD/concurrency
+budgets. Public outbound production still requires isolated state per call, authentication, durable consent
+and do-not-contact state, retention/deletion controls, current fact tools, human transfer, provider fallbacks,
+load/chaos testing and an on-call operating model. See [VPS_DEPLOYMENT.md](docs/VPS_DEPLOYMENT.md),
+[PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) and [ASBL_VOICE_AGENT.md](docs/ASBL_VOICE_AGENT.md).
 
 ## Contributing and license
 

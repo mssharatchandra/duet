@@ -1,8 +1,10 @@
 import json
+import time
 
 import pytest
 
 from duet_agent import reasoning
+from duet_agent.rate_limits import ProviderQuota
 
 
 def _response(payload: dict, fenced: bool = False, tokens=(100, 40)) -> dict:
@@ -109,6 +111,23 @@ def test_failure_path_is_graceful(monkeypatch):
     assert isinstance(result, reasoning.ReasoningFailure)
     assert "simulated" in result.reason
     assert layer.stats.failures == 1
+
+
+def test_quota_exhaustion_never_calls_provider_or_waits(monkeypatch):
+    quota = ProviderQuota(requests_per_minute=1, requests_per_day=1)
+    with quota.slot():
+        pass
+    layer = reasoning.ReasoningLayer(api_key="test-key", quota=quota)
+    monkeypatch.setattr(layer, "_post", lambda _prompt: pytest.fail("provider must not be called"))
+
+    started = time.perf_counter()
+    layer._call([], "tell me about privacy")
+    elapsed = time.perf_counter() - started
+
+    result = layer.results.get_nowait()
+    assert isinstance(result, reasoning.ReasoningFailure)
+    assert "quota exhausted" in result.reason
+    assert elapsed < 0.1
 
 
 def test_cost_accounting():

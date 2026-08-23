@@ -10,6 +10,7 @@ command -v docker >/dev/null || { echo "docker not found — start Docker Deskto
 docker info >/dev/null 2>&1 || { echo "docker daemon not running — start Docker Desktop or 'colima start'"; exit 1; }
 [ -f infra/.env ] || cp infra/.env.example infra/.env
 mkdir -p .local/telemetry
+docker network inspect duet-backplane >/dev/null 2>&1 || docker network create duet-backplane >/dev/null
 
 echo "▸ starting stacks…"
 (cd infra && docker compose -p langfuse -f langfuse-compose.yml up -d --quiet-pull)

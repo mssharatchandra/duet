@@ -40,7 +40,7 @@ real trials to discover. Extract one contract at a time and require behavior/lat
 | Actions | Local idempotent ledger or allowlisted HTTPS gateway | Authenticated tool identity, idempotency keys, timeout/retry contract, confirmation state and reconciliation |
 | Speech | Persistent Sarvam TTS, pacing and adaptive jitter | MOS/intelligibility suite; pronunciation lexicon; voice fallback; cancellation under packet loss |
 | Telemetry | Langfuse + Prometheus + Loki/Alloy + Postgres, correlated and redacted | Retention/access policy, trace sampling, alerting, telemetry-loss alerts and cross-service propagation |
-| Testing | 141 focused tests, live reasoning gate, synthetic service smoke, ASR/TTS/duplex harnesses | Release-blocking end-to-end simulations, repeated stochastic runs, phone fixtures, k6/chaos and rollback test |
+| Testing | 148 focused tests, live reasoning gate, synthetic service smoke, ASR/TTS/duplex harnesses | Release-blocking end-to-end simulations, repeated stochastic runs, phone fixtures, k6/chaos and rollback test |
 | Privacy/safety | Consent-first persona, opt-out and content redaction | Durable consent/DNC before dialing, deletion SLA, PII inventory, threat model and legal review |
 | Deployment | Local Mac/Docker observability | Immutable containers, TLS/WSS, auth, secrets manager, CI deploy, canary, rollback and runbooks |
 
@@ -161,7 +161,9 @@ Duet now emits live traces, metrics, logs and summaries. Production still needs:
 - Extract a transport-neutral `SessionSupervisor`; support 10 concurrent isolated browser sessions.
 - Persist lead, consent, DNC, call and action records transactionally before external actions.
 - Connect the authenticated ASBL action gateway and human handoff.
-- Containerize the app; Caddy TLS/WSS; signed session tokens and origin checks.
+- **Implemented for the single-VPS demo:** non-root app container, Caddy TLS/WSS, origin checks, per-IP
+  session limits and process-level Gemini quotas. **Still required:** signed short-lived session tokens,
+  distributed admission and per-call isolation before multiple workers/users.
 - Add provider deadlines/circuit breakers and explicit clarification fallback.
 - Build 50–100 ASBL scenarios plus 20 consented phone/audio fixtures.
 - Run k6 load and fault injection; define dashboards, alerts and runbooks.

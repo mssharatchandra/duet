@@ -177,8 +177,8 @@ sequenceDiagram
     end
 ~~~
 
-The post-separation localhost smoke measured 2.44 seconds from final speech end to first server
-audio; a preceding run measured 2.06 seconds. This variance is optimization evidence, not a claim
+The latest quota-aware localhost smoke measured 2.169 seconds from final speech end to first server
+audio; recent runs ranged materially higher. This variance is optimization evidence, not a claim
 of 300 ms response latency.
 
 ## 4. Barge-in and interruption repair
@@ -222,7 +222,7 @@ sequenceDiagram
 ~~~
 
 The cancellation fast lane is independent of Gemini. Recent real-provider smokes yielded playback
-in 233–301 ms; the post-separation run missed the 300 ms target by 1 ms. Semantic repair happens
+in 198–301 ms. Semantic repair happens
 afterward.
 
 ~~~mermaid

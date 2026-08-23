@@ -43,6 +43,7 @@ from duet_agent.env import load_repo_env  # noqa: E402
 from duet_agent.injector import TextInjector  # noqa: E402
 from duet_agent.live_telemetry import LiveSessionTelemetry, METRICS  # noqa: E402
 from duet_agent import persona  # noqa: E402
+from duet_agent.rate_limits import SessionAdmission, gemini_quota  # noqa: E402
 from duet_agent.reasoning import Guidance, ReasoningFailure, ReasoningLayer, SpeechPreview  # noqa: E402
 from duet_agent.turns import TurnAssembler  # noqa: E402
 
@@ -1218,7 +1219,44 @@ class Session:
 active: dict = {"session": None}
 
 
-async def ws_handler(request: web.Request) -> web.WebSocketResponse:
+def _client_id(request: web.Request) -> str:
+    """Return the admission-control key without trusting spoofable headers.
+
+    Caddy appends X-Forwarded-For.  It is considered only when the operator has
+    explicitly declared that this process sits behind a trusted proxy.
+    """
+    if os.environ.get("TRUST_PROXY", "false").lower() in {"1", "true", "yes"}:
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            return forwarded.split(",", 1)[0].strip()[:80]
+    return (request.remote or "unknown")[:80]
+
+
+def _origin_allowed(request: web.Request) -> bool:
+    configured = os.environ.get("ALLOWED_ORIGINS", "").strip()
+    if not configured:
+        return True
+    allowed = {origin.strip().rstrip("/") for origin in configured.split(",") if origin.strip()}
+    return request.headers.get("Origin", "").rstrip("/") in allowed
+
+
+async def ws_handler(request: web.Request) -> web.StreamResponse:
+    if not _origin_allowed(request):
+        METRICS.inc("duet_session_rejections_total", labels={"reason": "origin"},
+                    help_text="Public session admission rejections")
+        return web.json_response({"ok": False, "error": "origin not allowed"}, status=403)
+
+    client_id = _client_id(request)
+    allowed, retry_after, dimension = request.app["session_admission"].allow(client_id)
+    if not allowed:
+        METRICS.inc("duet_session_rejections_total", labels={"reason": dimension},
+                    help_text="Public session admission rejections")
+        return web.json_response(
+            {"ok": False, "error": f"session {dimension} limit reached", "retry_after_s": round(retry_after)},
+            status=429,
+            headers={"Retry-After": str(max(1, round(retry_after)))},
+        )
+
     ws = web.WebSocketResponse(max_msg_size=1 << 20)
     await ws.prepare(request)
     if active["session"] is not None:
@@ -1333,6 +1371,7 @@ async def corrections_handler(request: web.Request) -> web.Response:
 
 async def health_handler(request: web.Request) -> web.Response:
     args = request.app["args"]
+    quota = gemini_quota().snapshot()
     return web.json_response(
         {
             "ok": True,
@@ -1342,6 +1381,11 @@ async def health_handler(request: web.Request) -> web.Response:
             "tts": args.tts_backend,
             "barge_in": args.barge_in,
             "session_active": active["session"] is not None,
+            "gemini_quota": {
+                "rpm": {"used": quota.rpm_used, "limit": quota.rpm_limit},
+                "rpd": {"used": quota.rpd_used, "limit": quota.rpd_limit},
+                "concurrent": {"used": quota.concurrent_used, "limit": quota.concurrent_limit},
+            },
         }
     )
 
@@ -1431,6 +1475,7 @@ def main() -> None:
 
     app = web.Application()
     app["args"] = args
+    app["session_admission"] = SessionAdmission.from_env()
     app.router.add_get("/ws", ws_handler)
     app.router.add_post("/corrections", corrections_handler)
     app.router.add_get("/healthz", health_handler)

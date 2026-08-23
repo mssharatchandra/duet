@@ -8,6 +8,7 @@
 # Usage: GEMINI_API_KEY=... python eval/reasoning/run_eval.py
 
 import json
+import os
 import statistics
 import sys
 import time
@@ -23,9 +24,24 @@ GATE = 0.90
 MAX_WORDS = 32
 
 
-def run_scenario(layer: ReasoningLayer, sc: dict, retries: int = 1):
+class RequestPacer:
+    """Smooth live-eval calls instead of consuming an RPM allowance in a burst."""
+
+    def __init__(self, interval_s: float):
+        self.interval_s = max(0.0, interval_s)
+        self.next_at = 0.0
+
+    def wait(self) -> None:
+        now = time.monotonic()
+        if now < self.next_at:
+            time.sleep(self.next_at - now)
+        self.next_at = time.monotonic() + self.interval_s
+
+
+def run_scenario(layer: ReasoningLayer, sc: dict, pacer: RequestPacer, retries: int = 1):
     """One live call, with one retry — a transient API blip should not fail CI."""
     for attempt in range(retries + 1):
+        pacer.wait()
         layer._call([tuple(h) for h in sc["history"]], sc["user"])
         result = layer.results.get()
         if isinstance(result, Guidance):
@@ -63,11 +79,13 @@ def main() -> int:
     load_repo_env()
     scenarios = json.loads((Path(__file__).parent / "scenarios.json").read_text())
     layer = ReasoningLayer(timeout_s=20.0)
-    print(f"model: {layer.model} · {len(scenarios)} scenarios\n")
+    interval_s = float(os.environ.get("GEMINI_EVAL_MIN_INTERVAL_SECONDS", "8"))
+    pacer = RequestPacer(interval_s)
+    print(f"model: {layer.model} · {len(scenarios)} scenarios · {interval_s:g}s request pacing\n")
 
     passed = total = 0
     for sc in scenarios:
-        guidance = run_scenario(layer, sc)
+        guidance = run_scenario(layer, sc, pacer)
         checks = score(sc, guidance)
         ok = sum(1 for _, p, _ in checks if p)
         passed += ok

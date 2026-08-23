@@ -1,5 +1,9 @@
 # Duet — handoff prompt for another LLM/engineer
 
+> Historical snapshot from 1 August 2026. It is intentionally preserved but is no longer authoritative.
+> Use the root README, `docs/ARCHITECTURE.md`, `docs/VPS_DEPLOYMENT.md`, `docs/CODE_WALKTHROUGH.md` and the
+> latest entries in `docs/DECISIONS.md` for current architecture, measurements and production status.
+
 *Written 2026-08-01. Self-contained: assumes zero prior context. Copy this whole file as a prompt.*
 
 ---

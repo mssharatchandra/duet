@@ -25,6 +25,7 @@ jobs:
           cp .env.example .env
           mkdir -p ../.local/telemetry
           touch ../.local/telemetry/ci.jsonl
+          docker network create duet-backplane
           docker compose -p langfuse -f langfuse-compose.yml up -d --quiet-pull
           docker compose -p duet-obs -f observability-compose.yml up -d --quiet-pull
       - name: Langfuse healthy

@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 
 from . import persona
 from .actions import ActionRequest, parse_action_request, parse_action_requests
+from .rate_limits import ProviderQuota, gemini_quota
 
 DEFAULT_MODEL = "gemini-3.1-flash-lite"  # measured ~1.0 s round-trip (DECISIONS.md 0005)
 API_ROOT = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -163,6 +164,7 @@ class ReasoningLayer:
         system_prompt: str | None = None,
         prompt_builder=None,
         response_parser=None,
+        quota: ProviderQuota | None = None,
     ):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
         if not self.api_key:
@@ -174,6 +176,7 @@ class ReasoningLayer:
         self.system_prompt = system_prompt or persona.SYSTEM_PROMPT
         self.prompt_builder = prompt_builder or persona.build_prompt
         self.response_parser = response_parser or parse_guidance
+        self.quota = quota or gemini_quota()
         self.results: queue.Queue = queue.Queue()
         self.previews: queue.Queue = queue.Queue()
         self.stats = UsageStats()
@@ -217,7 +220,11 @@ class ReasoningLayer:
             self._request_context.request_id = request_id
             self._request_context.user_utterance = user_utterance
             self._request_context.started_at = t0
-            response = self._post(self.prompt_builder(history, user_utterance))
+            # Quota waiting is forbidden on the conversational path. If the
+            # budget is unavailable, this raises immediately and the normal
+            # ReasoningFailure path lets the deterministic controller recover.
+            with self.quota.slot():
+                response = self._post(self.prompt_builder(history, user_utterance))
             guidance = self.response_parser(response)
             # Custom profiles use their own result dataclasses; attach public
             # request metadata when possible without coupling their schema.

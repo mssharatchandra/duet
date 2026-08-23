@@ -87,6 +87,9 @@ services:
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+    networks:
+      - default
+      - duet-backplane
 
   clickhouse:
     image: docker.io/clickhouse/clickhouse-server
@@ -177,3 +180,8 @@ volumes:
     driver: local
   langfuse_redis_data:
     driver: local
+
+networks:
+  duet-backplane:
+    name: duet-backplane
+    external: true

@@ -53,6 +53,7 @@ async def run(url: str, timeout_s: float) -> None:
         "turn_assembly_ms": None,
         "commit_at": None,
         "brain_at": None,
+        "first_audio_at": None,
         "reasoning_ms": None,
         "tts_ms": None,
     }
@@ -61,7 +62,15 @@ async def run(url: str, timeout_s: float) -> None:
         async with client.ws_connect(url) as ws:
             deadline = time.monotonic() + timeout_s
             while time.monotonic() < deadline:
-                message = await asyncio.wait_for(ws.receive(), timeout=3)
+                try:
+                    message = await asyncio.wait_for(
+                        ws.receive(), timeout=max(0.01, min(3, deadline - time.monotonic()))
+                    )
+                except TimeoutError:
+                    # Provider setup and the first TTS chunk may legitimately
+                    # produce a quiet interval. The outer end-to-end deadline,
+                    # not an arbitrary per-message gap, owns smoke failure.
+                    continue
                 if message.type != aiohttp.WSMsgType.TEXT:
                     continue
                 event = json.loads(message.data)
@@ -97,6 +106,7 @@ async def run(url: str, timeout_s: float) -> None:
                     observed.add("first_audio")
                     if measured_turn["brain_at"] is not None and measured_turn["tts_ms"] is None:
                         measured_turn["tts_ms"] = event.get("latency_ms")
+                        measured_turn["first_audio_at"] = time.perf_counter()
                     if not opening_sent:
                         opening_sent = True
                         send_tasks.add(asyncio.create_task(send_audio(ws, opening)))
@@ -109,17 +119,17 @@ async def run(url: str, timeout_s: float) -> None:
                         send_tasks.add(asyncio.create_task(send_audio(ws, interruption)))
                 if required <= observed:
                     elapsed_ms = round((time.perf_counter() - started) * 1000)
-                    if measured_turn["commit_at"] is not None and measured_turn["tts_ms"] is not None:
+                    if measured_turn["commit_at"] is not None and measured_turn["first_audio_at"] is not None:
                         commit_to_audio = (
-                            measured_turn["brain_at"] - measured_turn["commit_at"]
-                        ) * 1000 + measured_turn["tts_ms"]
+                            measured_turn["first_audio_at"] - measured_turn["commit_at"]
+                        ) * 1000
                         total = (measured_turn["turn_assembly_ms"] or 0) + commit_to_audio
                         print(
                             "MEASURE final speech end→first audio "
                             f"{total:.0f} ms = turn {measured_turn['turn_assembly_ms']} ms + "
-                            f"commit→brain {(measured_turn['brain_at'] - measured_turn['commit_at']) * 1000:.0f} ms + "
-                            f"TTS {measured_turn['tts_ms']} ms "
-                            f"(provider reasoning {measured_turn['reasoning_ms']} ms)"
+                            f"commit→first audio {commit_to_audio:.0f} ms "
+                            f"(overlapping provider reasoning {measured_turn['reasoning_ms']} ms; "
+                            f"TTS TTFB {measured_turn['tts_ms']} ms)"
                         )
                     else:
                         printable = {

@@ -1,5 +1,6 @@
 # Duet CI — every commit gets: lint, unit tests (2 OSes), import smoke on
-# Apple-Silicon, and the live reasoning-layer golden eval (≥90% gate).
+# Apple-Silicon and a production-container boot smoke. A paced live
+# reasoning-layer golden eval (≥90% gate) runs daily or on demand.
 #
 # What CI deliberately does NOT do: run the 4.9 GB Moshi weights. That check
 # (`duet-sdr` scripted mode, VERDICT: PASS) is the pre-push gate run locally,
@@ -12,6 +13,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    # One live behavior check per day avoids spending the project-wide
+    # free-tier request budget again for every small commit.
+    - cron: "17 2 * * *"
 
 jobs:
   lint:
@@ -56,14 +62,49 @@ jobs:
         working-directory: agent
         run: .venv/bin/python -c "import duet_agent.local_loop, duet_agent.sdr_loop; print('imports OK')"
 
-  reasoning-eval:
-    # Live golden eval against Gemini (17 scenarios; low but non-zero API cost,
-    # free tier in practice). Push-only: fork PRs have no secret access.
-    if: github.event_name == 'push'
+  container:
     runs-on: ubuntu-latest
-    needs: [lint, unit]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production web image
+        run: docker build --file web-demo/Dockerfile --tag duet-web:ci .
+      - name: Boot as non-root and pass health checks
+        run: |
+          test "$(docker image inspect duet-web:ci --format '{{.Config.User}}')" = "duet"
+          docker run --detach --name duet-web-ci --publish 8990:8990 \
+            --env GEMINI_API_KEY=ci-placeholder \
+            --env SARVAM_API_KEY=ci-placeholder \
+            duet-web:ci
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8990/healthz >/tmp/health.json; then
+              cat /tmp/health.json
+              curl --fail --silent http://127.0.0.1:8990/readyz
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs duet-web-ci
+          exit 1
+      - name: Container logs
+        if: failure()
+        run: docker logs duet-web-ci || true
+      - name: Stop container
+        if: always()
+        run: docker rm --force duet-web-ci || true
+
+  reasoning-eval:
+    # Operators may explicitly opt pushes in with a repository variable.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && vars.RUN_LIVE_EVAL_ON_PUSH == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [lint, unit, container]
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_EVAL_MIN_INTERVAL_SECONDS: "8"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

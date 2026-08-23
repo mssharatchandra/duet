@@ -1,0 +1,15 @@
+.git
+.github
+.env
+infra/.env
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+.local
+graphify-out
+eval/bench/out
+eval/asr/sessions
+media
+*.wav
+*.mp3

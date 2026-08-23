@@ -33,7 +33,19 @@ are auto-provisioned; benchmark runs (`eval/bench/run_bench.py`) populate them w
 Health/readiness: `http://localhost:8990/healthz` and `/readyz`. Raw application metrics:
 `http://localhost:8990/metrics`. Alloy status: `http://localhost:12345`.
 
-`langfuse-compose.yml` is the pinned upstream file from langfuse/langfuse (unmodified, so
-upgrades are a re-fetch); `observability-compose.yml` and `alloy.alloy` are ours. Telemetry is
+Where the data appears:
+
+- Langfuse → project `Duet` → traces named `duet-live-session` → reasoning generation and pipeline spans.
+- Grafana → Dashboards → `Duet`; Explore → Loki for event timelines or Duet Postgres for call rows.
+- Prometheus → query `duet_*`; its UI is diagnostic, while Grafana is the normal dashboard.
+- Postgres → host port 5433, database/user `duet`; `calls` is created on the first completed call.
+- Loki has no separate user interface. Use Grafana Explore.
+
+For the VPS profile, follow [`../docs/VPS_DEPLOYMENT.md`](../docs/VPS_DEPLOYMENT.md). It builds `duet-web`,
+adds Caddy TLS, keeps observability ports on loopback and documents one SSH tunnel for all UIs.
+
+`langfuse-compose.yml` is based on the upstream Langfuse v3 Compose file with one local addition: the private
+`duet-backplane` network used by the app exporter. Treat upstream upgrades as reviewed merges, not blind
+replacement. `observability-compose.yml` and `alloy.alloy` are ours. Telemetry is
 fail-silent and bounded: a slow/down observability backend may lose telemetry, but cannot block
 the audio path. Production alerting must make dropped telemetry visible.

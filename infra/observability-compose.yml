@@ -8,6 +8,53 @@
 # internal postgres on purpose: Langfuse's schema is its own business.
 
 services:
+  duet-web:
+    profiles: ["deploy"]
+    build:
+      context: ..
+      dockerfile: web-demo/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql://duet:${DUET_PG_PASSWORD:-replace-before-deploy}@duet-postgres:5432/duet
+      LANGFUSE_HOST: http://langfuse-web:3000
+      DUET_TELEMETRY_LOG: /data/telemetry/events.jsonl
+      GEMINI_QUOTA_STATE_PATH: /data/quota/gemini.json
+      TRUST_PROXY: "true"
+      ALLOWED_ORIGINS: https://${DUET_DOMAIN:-voice.invalid}
+    ports:
+      - "127.0.0.1:8990:8990"
+    volumes:
+      - ../.local/telemetry:/data/telemetry
+      - ../.local/quota:/data/quota
+      - ../eval/asr/sessions:/app/eval/asr/sessions
+    depends_on:
+      duet-postgres:
+        condition: service_healthy
+    networks:
+      - default
+      - duet-backplane
+
+  caddy:
+    profiles: ["deploy"]
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      DUET_DOMAIN: ${DUET_DOMAIN:-voice.invalid}
+      ACME_EMAIL: ${ACME_EMAIL:-ops@example.invalid}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      duet-web:
+        condition: service_healthy
+
   duet-postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -85,3 +132,10 @@ volumes:
   prom_data:
   loki_data:
   alloy_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  duet-backplane:
+    name: duet-backplane
+    external: true
