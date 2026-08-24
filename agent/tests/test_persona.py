@@ -65,6 +65,14 @@ def test_trial_backchannels_do_not_trigger_a_sales_turn():
     assert not persona.is_backchannel("Actually, four or five years")
 
 
+def test_short_nonsemantic_final_requires_repair_but_a_continuer_does_not():
+    assert persona.needs_low_information_repair("Yes")
+    assert persona.needs_low_information_repair("Maybe later")
+    assert not persona.needs_low_information_repair("Hmm")
+    assert not persona.needs_low_information_repair("Wait a minute")
+    assert not persona.needs_low_information_repair("Please stop")
+
+
 def test_barge_in_ignores_acknowledgements_and_likely_echo():
     spoken = "Broadway offers private foyers and spacious three bedroom homes."
     assert not persona.should_interrupt("hmm", spoken)

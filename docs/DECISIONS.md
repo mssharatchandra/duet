@@ -1042,6 +1042,18 @@ Native loopback is now unlimited by default; public IPs retain hourly/daily admi
 
 Admission also now checks both hourly and daily windows before charging either. Repeated attempts rejected by the hourly window no longer quietly consume the daily budget. Unit coverage verifies the loopback boundary and this accounting invariant.
 
+## 0030 — 2026-08-24 — Prefer conversational continuity over an aggressively short endpoint
+
+**Status:** Implemented and live-smoke-tested.
+
+The first recording traces showed a real quality failure: a 220 ms end-of-speech setting split ordinary pauses into short finals. Some of these reached the planner, which legitimately returned a wait strategy with no spoken content; technically valid, but indistinguishable from a frozen call to a listener. A late provider-VAD event could also let a final arrive while Aira was still speaking, queueing a second answer rather than yielding.
+
+The native demo now uses a 450 ms endpoint boundary. It is a deliberate demo-quality trade: roughly 230 ms more patience for substantially fewer clipped turns. Backchannels remain silent, permission/opt-out/pause handling remains deterministic, and other one-to-two-word finals receive one concrete repair prompt rather than entering sales reasoning. If the planner nevertheless returns an empty wait for a final, the runtime asks for rephrasing once; it never silently abandons the caller.
+
+Realtime VAD remains the fastest barge-in lane. A final-transcript guard cancels playback when VAD was late, including a direct permission answer, while preserving echo/backchannel protection. The browser also tears down microphone tracks, worklets and AudioContext at the end of every session, preventing accumulated audio pipelines across repeated demo takes.
+
+Verification: 154 deterministic tests pass. The real Sarvam → Gemini → Sarvam controlled-duplex smoke passed in 11.8 seconds with **204 ms** caller-audio-start to playback-cancel. The smoke now injects its final interruption after the completed plan event, where early streamed speech is guaranteed to be active, rather than relying on a timing-sensitive second first-audio event.
+
 ## Running spend
 
 | Date | Item | Cost | Total |

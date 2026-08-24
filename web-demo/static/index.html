@@ -138,11 +138,22 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-let ws, ctx, playerNode;
+let ws, ctx, playerNode, micNode, micStream;
 let duetLine = null, youInterim = null, lastDuetUtterance = null;
 let capturing = false, sessionId = null;
 let capturedUtterances = [];  // [{utterance_id, asr_hypothesis, duration_s}]
 let latency = { asr: null, brain: null, tts: null };
+
+function releaseAudio() {
+  try { micNode?.disconnect(); } catch (_) {}
+  try { playerNode?.disconnect(); } catch (_) {}
+  try { micStream?.getTracks().forEach((track) => track.stop()); } catch (_) {}
+  try { ctx?.close(); } catch (_) {}
+  micNode = null;
+  playerNode = null;
+  micStream = null;
+  ctx = null;
+}
 
 function renderLatency() {
   const parts = [];
@@ -248,6 +259,7 @@ async function saveCorrections() {
 $("saveCorrections").onclick = saveCorrections;
 
 async function start() {
+  releaseAudio();
   $("go").disabled = true;
   $("captureCheckbox").disabled = true;
   $("review").classList.remove("on");
@@ -269,11 +281,12 @@ async function start() {
   } catch (error) {
     throw new Error(`microphone access failed (${error.name || "unknown error"}): ${error.message || "allow microphone access and select the correct input"}`);
   }
+  micStream = media;
 
   ctx = new AudioContext({ sampleRate: 24000 });
   await ctx.audioWorklet.addModule("/static/worklets.js");
   const mic = ctx.createMediaStreamSource(media);
-  const micNode = new AudioWorkletNode(ctx, "mic-processor");
+  micNode = new AudioWorkletNode(ctx, "mic-processor");
   playerNode = new AudioWorkletNode(ctx, "player-processor");
   mic.connect(micNode);
   playerNode.connect(ctx.destination);
@@ -449,6 +462,7 @@ async function start() {
   };
   ws.onclose = () => {
     if (!socketError) $("status").textContent = "session ended";
+    releaseAudio();
     $("go").disabled = false;
     $("go").textContent = "Start talking";
     $("captureCheckbox").disabled = false;

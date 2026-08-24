@@ -153,7 +153,11 @@ class Session:
 
     def interrupt_playback(self, transcript: str = "") -> None:
         """Stop current and buffered speech when verified user speech arrives."""
-        if not self.args.barge_in or not self.agent_speaking.is_set():
+        if (
+            not self.args.barge_in
+            or not self.agent_speaking.is_set()
+            or self.cancel_speech.is_set()
+        ):
             return
         self.cancel_speech.set()
         self._clear_queue(self.spk_q)
@@ -171,6 +175,23 @@ class Session:
         if self.args.barge_in and self.agent_speaking.is_set():
             self.barge_in_pending = True
             self.interrupt_playback("")
+
+    def handle_final_during_playback(self, text: str) -> None:
+        """Second barge-in guard when provider VAD arrives after a final.
+
+        Provider VAD is normally faster, but an utterance that begins close to
+        an audio boundary can reach us first as a final. Without this guard it
+        is accepted while the prior answer continues, queues a second answer,
+        and makes the call sound lost. Backchannels remain non-interrupting.
+        """
+        if not self.args.barge_in or not self.agent_speaking.is_set():
+            return
+        if persona.is_backchannel(text):
+            return
+        permission = persona.permission_response(text) if self.sdr_permission == "pending" else None
+        if permission or persona.should_interrupt(text, self.current_speech_text):
+            self.barge_in_pending = True
+            self.interrupt_playback(text)
 
     # -- the 80 ms heartbeat ------------------------------------------------
 
@@ -658,6 +679,16 @@ class Session:
                     text="Acknowledgment heard; Aira waits instead of starting another pitch",
                 )
                 return
+            if persona.needs_low_information_repair(text):
+                response = persona.LOW_INFORMATION_REPAIR
+                self.speak(response)
+                history.append(("agent", response))
+                self.emit(
+                    type="policy",
+                    state="low_information_repair",
+                    text="Short final was not sent to sales reasoning; Aira asked one concrete recovery question",
+                )
+                return
             if brain:
                 self._commit_or_replace_speculation(text, history[:-1], brain)
             return
@@ -777,7 +808,15 @@ class Session:
                 )
                 policy_check = "repetition detected; reset question used"
 
-            if result.response_strategy != "wait" and spoken and not early_spoken:
+            if result.response_strategy == "wait" and not early_spoken:
+                # A model-level wait is appropriate only for a real continuer,
+                # which is filtered before the planner. A final that reached
+                # this point but yielded no speech otherwise feels like a
+                # broken call, so repair the turn rather than going silent.
+                spoken = persona.UNRESOLVED_TURN_REPAIR
+                policy_check = "planner wait repaired with one clarification; caller was never left in silence"
+
+            if spoken and not early_spoken:
                 self.speak(spoken)
                 history.append(("agent", spoken))
                 self.recent_agent_responses.append(spoken)
@@ -1043,6 +1082,7 @@ class Session:
                                     self.emit(type="asr_state", state="partial", text=text, streaming=True)
                             elif event == "transcript.final":
                                 text = str(message.get("text") or "").strip()
+                                self.handle_final_during_playback(text)
                                 end_at = last_speech_end["at"] or now
                                 record = capture_records.popleft() if capture_records else None
                                 if self.capture is not None and record is None:
@@ -1473,8 +1513,8 @@ def main() -> None:
                     default=os.environ.get("SARVAM_STT", "realtime"),
                     help="realtime has true interim transcripts and immediate VAD events; legacy is fallback")
     ap.add_argument("--sarvam-silence-ms", type=int,
-                    default=int(os.environ.get("SARVAM_SILENCE_MS", "220")),
-                    help="provider end-of-turn silence in milliseconds (default 220)")
+                    default=int(os.environ.get("SARVAM_SILENCE_MS", "450")),
+                    help="provider end-of-turn silence in milliseconds (default 450)")
     ap.add_argument("--tts-backend", choices=["sarvam-ws", "sarvam", "piper", "kokoro"], default=default_tts,
                     help="persistent Sarvam WebSocket (recommended), legacy Sarvam HTTP, "
                          "stable local Piper, or experimental local Kokoro")

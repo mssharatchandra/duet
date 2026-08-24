@@ -160,6 +160,14 @@ INTERRUPTION_CLARIFICATION_FOCUSED = (
 )
 PAUSE_ACK = "Of course. Take your time—I'm here when you're ready."
 PRESENCE_ACK = "Yes, I'm here—and I'm listening. What would you like me to clarify?"
+LOW_INFORMATION_REPAIR = (
+    "Sorry, I caught only a short reply. Is this mainly a family home, an investment, "
+    "or something specific you would like to explore?"
+)
+UNRESOLVED_TURN_REPAIR = (
+    "I may have caught only part of that. Could you say it once more, or ask me the specific detail "
+    "you would like to explore?"
+)
 SENSITIVE_PROFILE_ACK = (
     "I won't use religion or other sensitive traits to judge whether you may buy. "
     "I can only use needs you explicitly choose to share."
@@ -167,7 +175,7 @@ SENSITIVE_PROFILE_ACK = (
 
 _OPT_OUT = re.compile(
     r"\b(stop calling|stop talking|stop now|do not call|don't call|remove me|opt[ -]?out|not interested|"
-    r"leave me alone|wrong number|end (?:the )?(?:call|conversation)|stop (?:the )?conversation|hang up|no more|"
+    r"leave me alone|wrong number|please stop|end (?:the )?(?:call|conversation)|stop (?:the )?conversation|hang up|no more|"
     r"(?:do not|don't|dont|no longer) want to (?:listen|hear|talk|continue))\b",
     re.IGNORECASE,
 )
@@ -309,6 +317,25 @@ def normalize_domain_terms(text: str) -> str:
 def is_backchannel(text: str) -> bool:
     """True for listener continuers that should not launch a new sales turn."""
     return " ".join(normalized_words(text)) in _BACKCHANNELS
+
+
+def needs_low_information_repair(text: str) -> bool:
+    """Whether a final is too short to safely drive a sales-planning turn.
+
+    Consent, opt-out, pause, presence checks and listener backchannels each have
+    their own deterministic handling. Everything else this short is usually a
+    clipped final or a response to speech that overlapped the agent, so asking
+    one concrete recovery question is less jarring than guessing.
+    """
+    words = normalized_words(text)
+    return (
+        bool(words)
+        and len(words) <= 2
+        and not is_backchannel(text)
+        and not is_opt_out(text)
+        and not is_pause_request(text)
+        and not is_presence_check(text)
+    )
 
 
 def is_pause_request(text: str) -> bool:

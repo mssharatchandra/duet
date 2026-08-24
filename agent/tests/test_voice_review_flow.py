@@ -371,6 +371,65 @@ def test_sdr_backchannel_waits_without_calling_reasoning():
     assert any(event.get("state") == "listener_backchannel" for event in events)
 
 
+def test_short_nonsemantic_final_repairs_without_calling_reasoning():
+    session, spoken, events = _sdr_session()
+    session.sdr_permission = "granted"
+
+    class Brain:
+        called = False
+
+        def request(self, *_args):
+            self.called = True
+
+    brain = Brain()
+    session._accept_transcript("Maybe later", 80, [], brain)
+
+    assert spoken == [persona.LOW_INFORMATION_REPAIR]
+    assert not brain.called
+    assert any(event.get("state") == "low_information_repair" for event in events)
+
+
+def test_planner_wait_on_a_final_repairs_instead_of_silence():
+    session, spoken, _events = _sdr_session()
+    session.sdr_permission = "granted"
+    session.latest_brain_request_id = 1
+
+    class Brain:
+        def poll_preview(self):
+            return None
+
+        def poll(self):
+            return Guidance(
+                intent="other",
+                objection_type=None,
+                talking_point="",
+                lead_signals={dimension: "none" for dimension in persona.BANT},
+                response_strategy="wait",
+                user_utterance="Could you explain that again?",
+            )
+
+    session._poll_brain(Brain(), [])
+
+    assert spoken == [persona.UNRESOLVED_TURN_REPAIR]
+
+
+def test_final_permission_answer_stops_current_playback_when_vad_is_late():
+    session, _spoken, _events = _sdr_session()
+    session.args = SimpleNamespace(mode="sdr", barge_in=True)
+    session.sdr_permission = "pending"
+    session.agent_speaking = threading.Event()
+    session.agent_speaking.set()
+    session.current_speech_text = "Is now a good time for a brief conversation?"
+    session.cancel_speech = threading.Event()
+    interrupted = []
+    session.interrupt_playback = interrupted.append
+
+    session.handle_final_during_playback("Yes")
+
+    assert session.barge_in_pending
+    assert interrupted == ["Yes"]
+
+
 def test_transactional_turn_speaks_real_action_receipts_not_planner_promise():
     session, spoken, events = _sdr_session()
     session.sdr_permission = "granted"

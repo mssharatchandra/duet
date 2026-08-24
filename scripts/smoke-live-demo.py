@@ -102,6 +102,15 @@ async def run(url: str, timeout_s: float) -> None:
                 ):
                     measured_turn["brain_at"] = time.perf_counter()
                     measured_turn["reasoning_ms"] = event.get("latency_ms")
+                    # Early speech can start before final audit metadata arrives,
+                    # so waiting for another first-audio event to inject the
+                    # scripted interruption was racy. The agent is speaking by
+                    # the time its completed plan is emitted; exercise the
+                    # final-transcript cancellation guard at that boundary.
+                    if discovery_sent and not interrupted:
+                        interrupted = True
+                        interruption_started_at = time.perf_counter()
+                        send_tasks.add(asyncio.create_task(send_audio(ws, interruption)))
                 if event_type == "tts_state" and state == "first_audio":
                     observed.add("first_audio")
                     if measured_turn["brain_at"] is not None and measured_turn["tts_ms"] is None:
