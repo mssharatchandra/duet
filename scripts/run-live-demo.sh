@@ -14,4 +14,5 @@ exec "$python_bin" web-demo/server.py \
   --voice-stack open \
   --asr sarvam \
   --tts-backend sarvam-ws \
-  --barge-in
+  --barge-in \
+  --reasoning-backend "${REASONING_BACKEND:-demo}"

@@ -88,6 +88,168 @@ class UsageStats:
         return (self.tokens_in * pin + self.tokens_out * pout) / 1e6
 
 
+class DeterministicDemoBrain:
+    """Offline, zero-quota ASBL planner for a reliable live demonstration.
+
+    This is deliberately *not* presented as an LLM replacement.  It is the
+    failure-safe policy lane used when a live recording cannot depend on an
+    upstream model quota.  It implements the same small non-blocking contract
+    as :class:`ReasoningLayer`, so the audio, barge-in, policy, action and
+    telemetry paths remain exactly the paths used with Gemini.
+    """
+
+    model = "local-asbl-demo-policy"
+
+    def __init__(self):
+        self.results: queue.Queue = queue.Queue()
+        self.previews: queue.Queue = queue.Queue()
+        self.stats = UsageStats()
+        self.tracer = None
+        self.trace_id: str | None = None
+        self._request_lock = threading.Lock()
+        self._request_seq = 0
+
+    def request(self, history: list[tuple[str, str]], user_utterance: str) -> int:
+        """Plan synchronously, expose it asynchronously through ``poll``.
+
+        The response is put on a queue rather than returned so every caller
+        continues to use the production non-blocking interface.  No speech
+        preview is issued: final ASR remains the source of truth in this
+        deterministic recording mode.
+        """
+        del history  # Future policy versions may use compact, explicit state.
+        with self._request_lock:
+            self._request_seq += 1
+            request_id = self._request_seq
+        started = time.perf_counter()
+        guidance = _demo_guidance(user_utterance)
+        guidance.request_id = request_id
+        guidance.user_utterance = user_utterance
+        guidance.latency_ms = (time.perf_counter() - started) * 1e3
+        self.stats.calls += 1
+        self.stats.latencies_ms.append(guidance.latency_ms)
+        self.results.put(guidance)
+        return request_id
+
+    def poll(self):
+        try:
+            return self.results.get_nowait()
+        except queue.Empty:
+            return None
+
+    def poll_preview(self):
+        return None
+
+
+def _demo_guidance(user_utterance: str) -> Guidance:
+    """Return a compact, fact-grounded ASBL answer without network inference.
+
+    The matching is intentionally narrow and auditable.  Unknown questions
+    are clarified rather than guessed, which makes this a better on-stage
+    fallback than a generic hallucination-prone response.
+    """
+    text = user_utterance.lower()
+    signals = {dimension: "none" for dimension in persona.BANT}
+    evidence = {dimension: None for dimension in persona.BANT}
+
+    def answer(
+        spoken: str,
+        *,
+        intent: str = "question",
+        facts: list[str] | None = None,
+        stage: str = "education",
+        strategy: str = "acknowledge_and_answer",
+        next_action: str = "ask",
+        objection: str | None = None,
+    ) -> Guidance:
+        return Guidance(
+            intent=intent,
+            objection_type=objection,
+            talking_point=spoken,
+            lead_signals=signals,
+            conversation_stage=stage,
+            response_strategy=strategy,
+            next_action=next_action,
+            fact_ids=facts or [],
+            decision_summary="Local grounded ASBL demo policy selected this response.",
+            lead_evidence=evidence,
+        )
+
+    if any(word in text for word in ("price", "cost", "budget", "payment", "afford")):
+        signals["budget_fit"] = "weak"
+        evidence["budget_fit"] = "Asked about pricing or budget."
+        return answer(
+            "Broadway's published starting price is around three crore. Final pricing, inventory and floor premiums vary, so an authorised advisor should confirm the exact option.",
+            facts=["price"], strategy="factual_boundary", objection="price",
+        )
+    if any(word in text for word in ("privacy", "foyer", "opposite door", "private")):
+        return answer(
+            "Privacy is a clear Broadway design choice: many homes have private foyers, and the planning is intended to avoid opposite main doors. Is that important for your family?",
+            facts=["privacy"], strategy="explain_value",
+        )
+    if any(word in text for word in ("family", "live", "living", "home for us", "children", "kid")):
+        signals["use_case"] = "strong"
+        evidence["use_case"] = "Explicit family-home preference."
+        return answer(
+            "For a family home, I would compare privacy, the 3 and 3.5 BHK layouts, and everyday convenience. Which matters most to you: space, work-life amenities, or location?",
+            intent="discovery_answer", facts=["homes", "privacy", "amenities"], stage="discovery", strategy="clarify_need",
+        )
+    if any(word in text for word in ("investment", "invest", "yield", "return", "appreciation", "rental", "rent")):
+        signals["use_case"] = "strong"
+        evidence["use_case"] = "Explicit investment use case."
+        return answer(
+            "Broadway is in the Financial District, but I would not promise rental yield or appreciation. I can help compare verified location, layout and possession facts against your investment horizon.",
+            intent="objection", facts=["location", "possession"], strategy="factual_boundary", objection="investment_returns",
+        )
+    if any(word in text for word in ("location", "commute", "orr", "gachibowli", "financial district", "office")):
+        return answer(
+            "Broadway is in Hyderabad's Financial District, beside ASBL Loft, with access toward Gachibowli and the ORR corridor. Which workplace or commute would you want to evaluate?",
+            facts=["location"], strategy="clarify_need",
+        )
+    if any(word in text for word in ("possession", "handover", "ready", "move", "timeline", "when")):
+        signals["timeline"] = "weak"
+        evidence["timeline"] = "Asked about timing or possession."
+        return answer(
+            "The published possession date is December 2029. Does that horizon work for you, or are you looking for a home sooner?",
+            facts=["possession"], strategy="factual_boundary", objection="timing",
+        )
+    if any(word in text for word in ("bhk", "bedroom", "layout", "size", "square", "sq")):
+        return answer(
+            "Broadway offers 3 and 3.5 BHK homes, with published super built-up sizes from 2,035 to 2,650 square feet. Would you like to compare the family-use cases for the two layouts?",
+            facts=["homes"], strategy="explain_value",
+        )
+    if any(word in text for word in ("amenity", "club", "cowork", "work from home", "creche", "gym", "pool")):
+        return answer(
+            "Broadway publishes more than 107,000 square feet of indoor amenities, including practical work-life spaces. Would co-working, fitness, or family recreation be most useful to you?",
+            facts=["amenities"], strategy="explain_value",
+        )
+    if any(word in text for word in ("light", "height", "ceiling", "ventilation", "curtain wall")):
+        return answer(
+            "The design uses curtain-wall elements for natural light, and the keynote specifies 3,300 millimetres slab-to-slab height. Would you like to compare that feeling of space with privacy or layout?",
+            facts=["light_and_height"], strategy="explain_value",
+        )
+    if any(word in text for word in ("brochure", "callback", "call me", "site visit", "visit")):
+        action_name = "send_brochure" if "brochure" in text else ("book_site_visit" if "visit" in text else "schedule_callback")
+        request = ActionRequest(action_name, {"project": "ASBL Broadway"})
+        return Guidance(
+            intent="site_visit" if action_name == "book_site_visit" else "callback",
+            objection_type=None,
+            talking_point="Certainly. I am putting that request through now.",
+            lead_signals=signals,
+            conversation_stage="next_step",
+            response_strategy="offer_next_step",
+            next_action="tool",
+            decision_summary="Local demo policy recognised an explicit ASBL action request.",
+            lead_evidence=evidence,
+            tool_request=request,
+            tool_requests=[request],
+        )
+    return answer(
+        "I can help you compare Broadway on privacy, layouts, Financial District location, amenities, published pricing, or possession. Which would be most useful right now?",
+        intent="discovery_answer", stage="discovery", strategy="clarify_need",
+    )
+
+
 def parse_guidance(response: dict) -> Guidance:
     """Parse a generateContent response into validated Guidance.
 

@@ -136,6 +136,30 @@ def test_cost_accounting():
     assert stats.cost_usd("unknown-model") == 0.0
 
 
+def test_deterministic_demo_brain_is_local_and_grounded():
+    brain = reasoning.DeterministicDemoBrain()
+
+    request_id = brain.request([], "What is the price and can I get the brochure?")
+    result = brain.poll()
+
+    assert result is not None
+    assert result.request_id == request_id
+    assert result.fact_ids == ["price"]
+    assert "three crore" in result.talking_point
+    assert brain.poll_preview() is None
+    assert brain.stats.calls == 1
+
+
+def test_deterministic_demo_brain_creates_only_explicit_action_requests():
+    brain = reasoning.DeterministicDemoBrain()
+
+    brain.request([], "Please arrange a site visit.")
+    result = brain.poll()
+
+    assert result is not None
+    assert [item.name for item in result.tool_requests] == ["book_site_visit"]
+
+
 def test_missing_key_fails_fast(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):

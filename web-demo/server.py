@@ -44,7 +44,13 @@ from duet_agent.injector import TextInjector  # noqa: E402
 from duet_agent.live_telemetry import LiveSessionTelemetry, METRICS  # noqa: E402
 from duet_agent import persona  # noqa: E402
 from duet_agent.rate_limits import SessionAdmission, gemini_quota  # noqa: E402
-from duet_agent.reasoning import Guidance, ReasoningFailure, ReasoningLayer, SpeechPreview  # noqa: E402
+from duet_agent.reasoning import (  # noqa: E402
+    DeterministicDemoBrain,
+    Guidance,
+    ReasoningFailure,
+    ReasoningLayer,
+    SpeechPreview,
+)
 from duet_agent.turns import TurnAssembler  # noqa: E402
 
 from capture import SessionCapture, UtteranceSegmenter  # noqa: E402 — pure; safe under --no-model
@@ -452,7 +458,14 @@ class Session:
 
     def _make_brain(self):
         try:
-            brain = ReasoningLayer()
+            if self.args.reasoning_backend == "demo":
+                brain = DeterministicDemoBrain()
+                self.emit(
+                    type="status",
+                    text="Local ASBL demo planner active — no Gemini calls or quota dependency",
+                )
+            else:
+                brain = ReasoningLayer()
             telemetry = getattr(self, "telemetry", None)
             if telemetry is not None:
                 telemetry.attach_brain(brain)
@@ -1436,6 +1449,7 @@ async def health_handler(request: web.Request) -> web.Response:
             "voice_stack": args.voice_stack,
             "asr": args.asr,
             "tts": args.tts_backend,
+            "reasoning_backend": args.reasoning_backend,
             "barge_in": args.barge_in,
             "session_active": active["session"] is not None,
             "gemini_quota": {
@@ -1451,7 +1465,7 @@ async def readiness_handler(request: web.Request) -> web.Response:
     """Configuration readiness; provider reachability is measured by live error metrics."""
     args = request.app["args"]
     missing: list[str] = []
-    if not os.environ.get("GEMINI_API_KEY"):
+    if args.reasoning_backend == "gemini" and not os.environ.get("GEMINI_API_KEY"):
         missing.append("GEMINI_API_KEY")
     if (args.asr == "sarvam" or args.tts_backend.startswith("sarvam")) and not os.environ.get("SARVAM_API_KEY"):
         missing.append("SARVAM_API_KEY")
@@ -1518,6 +1532,13 @@ def main() -> None:
     ap.add_argument("--tts-backend", choices=["sarvam-ws", "sarvam", "piper", "kokoro"], default=default_tts,
                     help="persistent Sarvam WebSocket (recommended), legacy Sarvam HTTP, "
                          "stable local Piper, or experimental local Kokoro")
+    ap.add_argument(
+        "--reasoning-backend",
+        choices=["gemini", "demo"],
+        default=os.environ.get("REASONING_BACKEND", "gemini"),
+        help="gemini uses the remote grounded planner; demo uses the in-repo, fact-grounded ASBL "
+             "fallback with zero Gemini calls for reliable recordings",
+    )
     args = ap.parse_args()
     args.mode = "sdr"  # internal telemetry label; Duet now has one product runtime
     if args.no_model:
