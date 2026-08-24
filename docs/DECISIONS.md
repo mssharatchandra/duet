@@ -1090,6 +1090,63 @@ CI's "pure" ubuntu tier (stdlib + pytest + numpy + aiohttp, no MLX). The macOS f
 the container boot smoke, and both live-provider gates run in CI itself on this PR and are the actual
 merge-worthy evidence; do not treat this local verification as a substitute for a green CI run.
 
+## 0030 — 2026-08-24 — Live verification of 0029: caching is dead on this tier, the coverage win is unproven
+
+**Status:** Golden eval passed live (139/144, 96.5%); two proposed levers investigated live and both
+came back negative or inconclusive. Recorded honestly rather than left as an untested recommendation.
+
+With both `GEMINI_API_KEY` and `SARVAM_API_KEY` available for the first time, four proposed follow-on
+levers were checked against live services before writing any more code.
+
+**Gemini context caching — dropped, verified dead on this account.** Explicit caching
+(`cachedContents` API) with the real `SYSTEM_PROMPT` (measured 1,991 prompt tokens) returned
+`429 RESOURCE_EXHAUSTED: TotalCachedContentStorageTokensPerModelFreeTier limit=0` — the free tier this
+project runs on (0005, 0028) has zero cache storage quota, full stop. Implicit/automatic caching was
+also checked directly: three identical-system-prompt calls in a row all reported
+`promptTokenCount: 1991` with no `cachedContentTokenCount` field, i.e. no discount is being applied
+either. Building explicit-caching code here would be dead code that always 429s. Not implemented.
+Revisit only if the project ever moves off the free tier.
+
+**Short-turn speculative coverage (0029) — real A/B run, result is not distinguishable from noise.**
+Built a synthetic-caller probe (adapted from `scripts/smoke-live-demo.py`, using Sarvam TTS instead of
+Piper to avoid a heavy local-voice install) sending the literal 2-word turn "What price?" through a
+live Sarvam→Gemini→Sarvam pipeline, run with `--barge-in` (required for the existing smoke protocol's
+event sequence). Two runs against this branch and two against a `main` worktree on the same machine,
+same keys, back to back:
+
+| Branch | Run 1 | Run 2 |
+|---|---:|---:|
+| `main` (baseline) | 2,001 ms | 1,822 ms |
+| this branch (0029) | 1,753 ms | 2,133 ms |
+
+Averages (1,943 ms vs 1,912 ms) are within the pipeline's own documented run-to-run variance
+(0022/0028 report a 1,622–2,614 ms range on nominally identical turns), so this sample cannot support
+a claim that the coverage-widening lever measurably helped. The live trace did confirm the mechanism
+itself fires correctly (`brain_state: speculation_committed` appeared for the 2-word turn, which is
+exactly the code path 0029 unblocked), so the *engineering* claim in 0029 stands — reachability was
+the bug, and it's fixed. The *latency* claim was always a hypothesis pending measurement, and the
+honest reading of this data is: **for a turn this short, there's very little ASR partial-to-final gap
+to hide Gemini's ~1.5 s call behind in the first place**, so even a perfectly-working coverage
+widening has a small, possibly negative-relative-to-noise ceiling on this exact case. A confident
+verdict needs a proper n≥10-per-arm run, not two.
+
+**Not yet attempted, still open:** sub-clause TTS streaming (start speaking the first sentence before
+the second finishes generating — currently `extract_complete_json_string` waits for the whole
+`talking_point` field), expanding the deterministic fast lane further (found to have less headroom
+than assumed: greeting, permission grant/deny, pause, presence-check, opt-out and ambiguous-change are
+*already* deterministic per 0019/0023 — the only remaining candidate, a canned closing line, was left
+alone because it trades against the explicit anti-robotic-script principle from 0020), tightening the
+120 ms partial-stability window, and loosening the 0.82 meaning-preservation threshold. All four need
+either new code (sub-clause streaming) or a proper statistically-powered live run (the two tuning
+knobs) that this session did not have the remaining time budget to do responsibly.
+
+**Verification:** live golden eval on `workflow_dispatch` (GitHub Actions run 32712061806) passed
+139/144 = 96.5% (gate ≥90%); container/lint/unit all green in the same run. The A/B probe script is
+throwaway (not committed — it lived in a scratch directory) since it duplicates
+`scripts/smoke-live-demo.py`'s protocol with one text substitution and isn't a durable eval asset by
+itself; a proper n≥10 short-turn benchmark belongs in `eval/bench/` as a follow-up, not as a one-off
+script.
+
 ## Running spend
 
 | Date | Item | Cost | Total |
