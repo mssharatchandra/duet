@@ -1,11 +1,14 @@
 # Duplex steering: controllability is a latency property, not a model property
 
-**Status: hypothesis falsified, useful result retained, 2026-08-24.** The threshold claim this
-document was written to test — that a full-duplex model becomes reliably steerable below some
-critical steering latency — **did not survive its own sweep**. What survived is weaker and real:
-steering latency and the injector's politeness window are two additive, continuous contributors to
-how far the model free-runs, and tuning both together cuts self-chosen speech before guidance by
-4.9x. Read the sweep results before citing anything here.
+**Status: direction refuted, 2026-08-24.** Two independent failures. (1) The threshold claim —
+that a full-duplex model becomes reliably steerable below some critical steering latency — did not
+survive its own sweep: the response is smooth, with no knee. (2) The consolation result — a 4.9x
+reduction in free-run tokens — **did not survive validation on real turn-taking metrics**: the
+configuration that produced it is *worse* on takeover rate, overlap, handoff latency and
+backchannel count than the slow configuration it was supposed to beat. `free_run_tokens` was an
+actively misleading proxy. The load-bearing finding is the opposite of the thesis: the injector's
+politeness window is protective, and steering latency was never the binding constraint on duplex
+control. Do not cite this document for a latency win.
 
 ## The observation this starts from
 
@@ -139,16 +142,49 @@ which is why the first (invalid) sweep looked flat, and why making the brain fas
 bought nothing until this parameter moved. Latency and politeness are additive contributors to
 free-run, and the politeness window was the binding one at the fast end.
 
-**Combined effect, best vs July-equivalent configuration:**
+**Combined effect on the proxy, best vs July-equivalent configuration:**
 
 | configuration | free-run tokens | committed |
 |---|---:|---:|
 | q=6, 1300 ms steering (≈ July's Gemini loop) | 11.08 | 100% |
 | q=1, natural local brain | **2.25** | **33.3%** |
 
-A 4.9× reduction in self-chosen words spoken before guidance lands, and commitment cut from every
-turn to one turn in three. That is a real engineering result. It is not the result the hypothesis
-predicted.
+A 4.9× reduction in self-chosen words spoken before guidance lands. **This improvement is not
+real** — see the turn-taking validation below, which shows the same configuration is worse on every
+metric that the July claim was actually made in. It is recorded because it is the number this work
+would have shipped had the proxy not been checked.
+
+### Turn-taking validation — the proxy win inverts
+
+`eval/duplex/turntaking_ab.py` reruns the comparison on the July benchmark's own terms: the same 10
+scenarios, the same Piper lessac caller voice, the same `RMS_USER`/`RMS_AGENT` energy thresholds,
+the same `CALLER_GAP_S`/`BARGE_AFTER_S` scheduling, scored by the same `turntaking.py`.
+
+| arm | takeover | overlap | handoff p50 | handoff p95 | backchannels/call |
+|---|---:|---:|---:|---:|---:|
+| July baseline (`eval/bench/RESULTS.md`) | 0.24 | 0.234 | 240 ms | 3,248 ms | 0.4 |
+| `julyish` — q=6, 1300 ms brain | **0.43** | **0.232** | **372 ms** | **938 ms** | 0.20 |
+| `mid` — q=4, natural brain | 0.69 | 0.368 | 1,756 ms | 3,602 ms | 1.20 |
+| `fast` — q=1, natural brain | 0.69 | 0.328 | 3,084 ms | 4,914 ms | 1.10 |
+
+**The slowest, most polite arm is the best on every metric.** The `fast` configuration — the one
+that cut free-run tokens 4.9× — has 59% more takeovers, 41% more overlap, and a handoff p50 **8×
+worse** than the arm it was meant to improve on. `mid` is no better. Latency was not the binding
+constraint on duplex control; `quiet_frames_to_start` was, and it was protective. Shrinking the
+politeness window lets the injector start forcing while the caller is still talking, which produces
+exactly the floor-grabbing that got the duplex core benched in 0016 — and then wrecks handoff too,
+because an agent that interrupts has no clean turn boundary to respond at.
+
+The `julyish` arm is a fair but inexact reproduction of the July baseline (takeover 0.43 vs 0.24,
+handoff p50 372 ms vs 240 ms) — it uses Gemma steering rather than Gemini, so content and phrase
+lengths differ. Overlap lands at 0.232 against July's 0.234, which suggests the harness reproduces
+the baseline's acoustic character even where content differs. Treat it as the internal control; the
+across-arm comparison is the valid one.
+
+**Consequence for this whole direction:** the sub-1s duplex architecture this document set out to
+build is not supported. The best-measured duplex configuration remains roughly the one the
+repository already had in July, and it is reached by keeping the politeness window wide — which
+makes steering-loop speed largely irrelevant to the metric that matters.
 
 **GPU contention, also unpredicted.** `FastBrain` measured 279 ms standalone but 286–541 ms with
 Moshi stepping concurrently — both compete for the same Metal device. Steering latency on a laptop

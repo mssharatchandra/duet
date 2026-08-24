@@ -1245,6 +1245,35 @@ defects: arms shared one `LmGen` so state leaked forward and eventually overran 
 same arm; and the striking number came from whichever arm ran first on fresh state. The harness now
 builds a fresh generator and codec per arm and prints measured steer latency beside the nominal value.
 
+**Follow-up that killed the remaining result (same day):** the 4.9x free-run improvement was
+validated on the July benchmark's own metrics via `eval/duplex/turntaking_ab.py` — same 10 scenarios,
+same Piper lessac caller voice, same RMS thresholds and scheduling constants, scored by the same
+`turntaking.py`. **The proxy win inverts.**
+
+| arm | takeover | overlap | handoff p50 | p95 | backchannels/call |
+|---|---:|---:|---:|---:|---:|
+| July baseline | 0.24 | 0.234 | 240 ms | 3,248 ms | 0.4 |
+| `julyish` q=6, 1300 ms | **0.43** | **0.232** | **372 ms** | **938 ms** | 0.20 |
+| `mid` q=4, natural | 0.69 | 0.368 | 1,756 ms | 3,602 ms | 1.20 |
+| `fast` q=1, natural | 0.69 | 0.328 | 3,084 ms | 4,914 ms | 1.10 |
+
+The slowest, most polite arm wins on every metric. The `fast` config that cut free-run tokens 4.9x has
+59% more takeovers, 41% more overlap and an 8x worse handoff p50. `quiet_frames_to_start` is protective,
+not overhead: shrinking it lets injection start while the caller is still speaking, reproducing exactly
+the floor-grabbing that benched the duplex core in 0016. Steering latency was never the binding
+constraint on duplex control, so the sub-1s duplex architecture this work set out to build is not
+supported and the best duplex configuration measured remains approximately the one the repo already had.
+
+`free_run_tokens` is withdrawn as a control-quality metric. It moved opposite to every metric that
+matters, and had this work shipped on the proxy it would have made the agent measurably ruder. The
+lesson generalizes past this experiment: a proxy invented in the same session as the hypothesis it
+supports needs validation against the metric the original claim was made in, before it is reported.
+
+**What survives:** `fast_brain.py`'s KV-cache result (798 ms -> 172 ms TTFT, 4.6x) is real and unaffected
+— it is a property of prompt caching, not of duplex steering, and remains useful anywhere the static
+prompt dominates prefill. `eval/duplex/turntaking_ab.py` is a durable A/B harness against the July
+baseline. Everything else in this direction is a negative result.
+
 **Verification:** Ruff clean on `agent`, `web-demo/server.py`, `scripts/`, `eval/reasoning`, and
 `eval/duplex`. Unit suite **155 passed** (150 + 5 new `test_fast_brain.py` covering the text handling
 that decides what reaches the speaker). Both sweeps are real Moshi + real Gemma runs, n=12 turns per arm.
