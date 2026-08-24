@@ -173,10 +173,10 @@ class KeyedWindowLimiter:
     def allow(self, key: str) -> tuple[bool, float]:
         now = self._clock()
         with self._lock:
+            allowed, retry = self._check_locked(key, now)
+            if not allowed:
+                return False, retry
             events = self._events[key]
-            ProviderQuota._prune(events, now - self.window_s)
-            if len(events) >= self.max_events:
-                return False, max(0.0, self.window_s - (now - events[0]))
             events.append(now)
             if len(self._events) > self.max_keys:
                 stale = [candidate for candidate, values in self._events.items() if not values or values[-1] <= now - self.window_s]
@@ -184,29 +184,80 @@ class KeyedWindowLimiter:
                     self._events.pop(candidate, None)
             return True, 0.0
 
+    def check(self, key: str) -> tuple[bool, float]:
+        """Report capacity without charging an admission attempt."""
+        now = self._clock()
+        with self._lock:
+            return self._check_locked(key, now)
+
+    def _check_locked(self, key: str, now: float) -> tuple[bool, float]:
+        events = self._events[key]
+        ProviderQuota._prune(events, now - self.window_s)
+        if len(events) >= self.max_events:
+            return False, max(0.0, self.window_s - (now - events[0]))
+        return True, 0.0
+
 
 class SessionAdmission:
-    """Per-IP protection around the expensive public WebSocket session."""
+    """Per-IP protection around an expensive public WebSocket session.
 
-    def __init__(self, *, per_hour: int, per_day: int, clock=time.monotonic):
+    Local loopback is deliberately unlimited by default.  This preserves the
+    public IP cost boundary while allowing iterative browser development and
+    smoke checks on the same Mac.  The deploy profile switches it off.
+    """
+
+    def __init__(
+        self,
+        *,
+        per_hour: int,
+        per_day: int,
+        allow_loopback: bool = True,
+        clock=time.monotonic,
+    ):
         self.hour = KeyedWindowLimiter(max_events=per_hour, window_s=3_600, clock=clock)
         self.day = KeyedWindowLimiter(max_events=per_day, window_s=86_400, clock=clock)
+        self.allow_loopback = allow_loopback
+        self._lock = threading.Lock()
 
     @classmethod
     def from_env(cls) -> "SessionAdmission":
         return cls(
             per_hour=int(os.environ.get("SESSION_LIMIT_PER_IP_HOUR", "3")),
             per_day=int(os.environ.get("SESSION_LIMIT_PER_IP_DAY", "10")),
+            allow_loopback=os.environ.get("ALLOW_LOOPBACK_UNLIMITED_SESSIONS", "true").lower()
+            in {"1", "true", "yes"},
         )
 
-    def allow(self, client_id: str) -> tuple[bool, float, str]:
-        allowed, retry = self.day.allow(client_id)
+    def _is_loopback(self, client_id: str) -> bool:
+        return client_id.strip().lower() in {"127.0.0.1", "::1", "localhost"}
+
+    def _check_locked(self, client_id: str) -> tuple[bool, float, str]:
+        allowed, retry = self.day.check(client_id)
         if not allowed:
             return False, retry, "daily"
-        allowed, retry = self.hour.allow(client_id)
+        allowed, retry = self.hour.check(client_id)
         if not allowed:
             return False, retry, "hourly"
         return True, 0.0, ""
+
+    def check(self, client_id: str) -> tuple[bool, float, str]:
+        if self.allow_loopback and self._is_loopback(client_id):
+            return True, 0.0, ""
+        with self._lock:
+            return self._check_locked(client_id)
+
+    def allow(self, client_id: str) -> tuple[bool, float, str]:
+        if self.allow_loopback and self._is_loopback(client_id):
+            return True, 0.0, ""
+        # Check both windows before charging either one.  Otherwise a retry
+        # rejected by the hourly window would silently consume daily budget.
+        with self._lock:
+            allowed, retry, dimension = self._check_locked(client_id)
+            if not allowed:
+                return allowed, retry, dimension
+            self.day.allow(client_id)
+            self.hour.allow(client_id)
+            return True, 0.0, ""
 
 
 _GEMINI_QUOTA: ProviderQuota | None = None

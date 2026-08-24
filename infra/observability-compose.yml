@@ -22,6 +22,7 @@ services:
       DUET_TELEMETRY_LOG: /data/telemetry/events.jsonl
       GEMINI_QUOTA_STATE_PATH: /data/quota/gemini.json
       TRUST_PROXY: "true"
+      ALLOW_LOOPBACK_UNLIMITED_SESSIONS: "false"
       ALLOWED_ORIGINS: https://${DUET_DOMAIN:-voice.invalid}
     ports:
       - "127.0.0.1:8990:8990"

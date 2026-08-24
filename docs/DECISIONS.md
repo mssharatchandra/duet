@@ -1032,6 +1032,16 @@ SHAs (checkout v7.0.1, setup-python v7.0.0, setup-uv v10.0.1). Infrastructure te
 Python 3.12 instead of inheriting a mutable runner default. This removes Node-runtime deprecation warnings and
 reduces third-party action supply-chain drift while keeping the human-readable release tag in comments.
 
+## 0029 — 2026-08-24 — Keep local iteration out of public session admission
+
+**Status:** Implemented and regression-tested locally.
+
+The public WebSocket admission limit correctly rejected excess sessions, but its native defaults also counted browser reloads and smoke checks from `127.0.0.1`. After three local starts, the browser received an HTTP 429 during WebSocket upgrade while the old UI reduced that actionable error to “disconnected” or an idle transcriber. This was a developer-experience failure, not an ASR or Sarvam outage.
+
+Native loopback is now unlimited by default; public IPs retain hourly/daily admission protection. The Docker/VPS profile explicitly disables the loopback exception because Caddy forwards the caller’s real address. A capacity-only endpoint checks admission before the browser requests microphone permission, and the browser now presents provider, connection, and microphone permission failures directly.
+
+Admission also now checks both hourly and daily windows before charging either. Repeated attempts rejected by the hourly window no longer quietly consume the daily budget. Unit coverage verifies the loopback boundary and this accounting invariant.
+
 ## Running spend
 
 | Date | Item | Cost | Total |

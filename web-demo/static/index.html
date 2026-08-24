@@ -253,9 +253,22 @@ async function start() {
   $("review").classList.remove("on");
   capturedUtterances = [];
   sessionId = null;
+  $("status").textContent = "checking session capacity…";
+  const capacity = await fetch("/session-capacity", { cache: "no-store" });
+  const capacityBody = await capacity.json();
+  if (!capacity.ok || !capacityBody.ok) {
+    const minutes = Math.ceil((capacityBody.retry_after_s || 0) / 60);
+    throw new Error(`${capacityBody.error || "session unavailable"}${minutes ? ` — try again in about ${minutes} minute(s)` : ""}`);
+  }
+
   $("status").textContent = "requesting microphone…";
-  const media = await navigator.mediaDevices.getUserMedia({ audio: {
-    echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }});
+  let media;
+  try {
+    media = await navigator.mediaDevices.getUserMedia({ audio: {
+      echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }});
+  } catch (error) {
+    throw new Error(`microphone access failed (${error.name || "unknown error"}): ${error.message || "allow microphone access and select the correct input"}`);
+  }
 
   ctx = new AudioContext({ sampleRate: 24000 });
   await ctx.audioWorklet.addModule("/static/worklets.js");
@@ -275,6 +288,7 @@ async function start() {
   const wsScheme = location.protocol === "https:" ? "wss" : "ws";
   ws = new WebSocket(`${wsScheme}://${location.host}/ws`);
   ws.binaryType = "arraybuffer";
+  let socketError = "";
 
   // Opt-in recording: one JSON control message, sent once the socket is open, only if the
   // user checked the box. Default is OFF — capture never happens unless asked for.
@@ -298,7 +312,7 @@ async function start() {
     }
     const ev = JSON.parse(e.data);
     if (ev.type === "status") { $("status").textContent = ev.text; if (ev.ready) $("status").style.color = "#3fb950"; }
-    else if (ev.type === "error") { $("status").textContent = "⚠ " + ev.text; $("status").style.color = "#f85149"; }
+    else if (ev.type === "error") { socketError = ev.text; $("status").textContent = "⚠ " + ev.text; $("status").style.color = "#f85149"; }
     else if (ev.type === "you") {
       const label = ev.raw_text ? `you (ASR: “${ev.raw_text}” · domain-normalized)` : "you (transcribed)";
       addMsg(label, ev.text, "you-t"); duetLine = null; lastDuetUtterance = null;
@@ -428,8 +442,13 @@ async function start() {
     }
   };
   function feedScroll(){ $("feed").parentElement.scrollTop = 1e9; }
+  ws.onerror = () => {
+    socketError ||= "audio session could not connect — check server capacity and reload";
+    $("status").textContent = "⚠ " + socketError;
+    $("status").style.color = "#f85149";
+  };
   ws.onclose = () => {
-    $("status").textContent = "disconnected";
+    if (!socketError) $("status").textContent = "session ended";
     $("go").disabled = false;
     $("go").textContent = "Start talking";
     $("captureCheckbox").disabled = false;

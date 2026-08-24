@@ -66,9 +66,25 @@ def test_keyed_limiter_isolated_by_client():
 
 def test_session_admission_reports_hourly_limit():
     clock = Clock()
-    admission = SessionAdmission(per_hour=1, per_day=5, clock=clock)
+    admission = SessionAdmission(per_hour=1, per_day=5, allow_loopback=False, clock=clock)
     assert admission.allow("203.0.113.1")[0]
     allowed, retry, dimension = admission.allow("203.0.113.1")
     assert not allowed
     assert retry > 0
     assert dimension == "hourly"
+
+
+def test_session_admission_leaves_loopback_unlimited_for_local_development():
+    admission = SessionAdmission(per_hour=1, per_day=1)
+    assert admission.allow("127.0.0.1")[0]
+    assert admission.allow("127.0.0.1")[0]
+    assert admission.check("::1")[0]
+
+
+def test_hourly_rejection_does_not_consume_daily_budget():
+    clock = Clock()
+    admission = SessionAdmission(per_hour=1, per_day=2, allow_loopback=False, clock=clock)
+    assert admission.allow("203.0.113.1")[0]
+    assert not admission.allow("203.0.113.1")[0]
+    clock.now += 3_600.01
+    assert admission.allow("203.0.113.1")[0]

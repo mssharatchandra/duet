@@ -1339,6 +1339,23 @@ async def ws_handler(request: web.Request) -> web.StreamResponse:
     return ws
 
 
+async def session_capacity_handler(request: web.Request) -> web.Response:
+    """Explain capacity before the browser opens a microphone/WebSocket session."""
+    client_id = _client_id(request)
+    allowed, retry_after, dimension = request.app["session_admission"].check(client_id)
+    if allowed:
+        return web.json_response({"ok": True})
+    return web.json_response(
+        {
+            "ok": False,
+            "error": f"session {dimension} limit reached",
+            "retry_after_s": round(retry_after),
+        },
+        status=429,
+        headers={"Retry-After": str(max(1, round(retry_after)))},
+    )
+
+
 async def corrections_handler(request: web.Request) -> web.Response:
     """POST /corrections — human-in-the-loop ground truth for a captured session.
 
@@ -1477,6 +1494,7 @@ def main() -> None:
     app["args"] = args
     app["session_admission"] = SessionAdmission.from_env()
     app.router.add_get("/ws", ws_handler)
+    app.router.add_get("/session-capacity", session_capacity_handler)
     app.router.add_post("/corrections", corrections_handler)
     app.router.add_get("/healthz", health_handler)
     app.router.add_get("/readyz", readiness_handler)
