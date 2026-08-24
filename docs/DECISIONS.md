@@ -1032,6 +1032,254 @@ SHAs (checkout v7.0.1, setup-python v7.0.0, setup-uv v10.0.1). Infrastructure te
 Python 3.12 instead of inheriting a mutable runner default. This removes Node-runtime deprecation warnings and
 reduces third-party action supply-chain drift while keeping the human-readable release tag in comments.
 
+## 0029 — 2026-08-24 — Lower the speculative-reasoning word floor so short turns can mask latency too
+
+**Status:** Implemented and unit-verified; the live-provider latency win is NOT yet measured (no
+Gemini/Sarvam credentials were available in the environment that made this change).
+
+0022 and 0028 both name the same open gap: measured end-to-speech-audio sits at 1,622–2,614 ms
+(latest real run 2,169 ms, 0028), still well above the project's own 650–900 ms median target, and
+"the variance is mostly Gemini and whether a stable partial was available early enough." That
+sentence describes a coverage problem, not just a per-call latency problem: `_start_speculative_reasoning`
+(`web-demo/server.py`) and `persona.partial_matches_final` both required at least **4** stable
+interim words before a turn was eligible for speculative reasoning at all. Any turn that resolves in
+under four words — "what price", "site visit please", "yes I am", a two-word answer to a direct
+question — never got a speculative request fired, so 100% of Gemini's latency landed on the critical
+path for exactly the shortest, highest-frequency class of turn in a phone call.
+
+**Decision:** introduce `persona.MIN_SPECULATIVE_WORDS = 2`, shared by both the speculative-start
+gate and the commit-eligibility floor in `partial_matches_final` so the two can never disagree about
+what counts as speculatable (starting speculation at a floor the commit check would immediately
+reject would just waste a Gemini call for zero latency benefit — the two gates must move together).
+Existing safety filters are unchanged: `is_opt_out`, `is_ambiguous_change`, `is_backchannel` and the
+0.82 `SequenceMatcher` / 0.65 prefix-ratio meaning-preservation check on `partial_matches_final`
+still gate every commit exactly as before. This widens *coverage* of speculation, not its safety
+bar.
+
+**Why not lower further, or touch the 120 ms stability window instead:** a 1-word floor was
+considered and rejected — a single word ("what", "site") carries essentially no committable meaning
+and firing reasoning on it would mostly produce wasted, always-replaced Gemini calls (cost, and
+quota pressure against the 0028 RPM/RPD limiter) rather than masked latency. The 120 ms partial-
+stability window in the coordinator loop was left untouched: it is a provider-jitter debounce, not a
+coverage gate, and tightening it trades false-start rate for latency in a way that needs a live
+measurement to judge safely — exactly what this environment could not run (see below).
+
+**Alternatives considered and rejected:**
+| Option | Assessment |
+|---|---|
+| Reorder the Gemini JSON response schema so `talking_point` streams first | Rejected without a live eval run: `intent`/`response_strategy`/`next_action` currently precede `talking_point`, effectively letting the model classify before it commits to spoken words. Reordering could measurably help TTFT but risks quality regression on exactly the kind of case the 97%+ golden eval exists to catch, and this environment has no `GEMINI_API_KEY` to run that eval. Left as a follow-up requiring the maintainer's key. |
+| Swap Gemini for a local model | Already measured and rejected in 0022 (Qwen3.5-4B too slow, Qwen3.5-0.8B fast but ungrounded/hallucinating). Not revisited here; Gemma remains an open, untested candidate for a future decision entry. |
+| Loosen the 0.82 meaning-preservation threshold | Rejected: that is a correctness/safety knob (how much a committed speculative answer is allowed to drift from final meaning), not a coverage knob. Conflating the two would trade grounding safety for latency without measurement. |
+
+**Honest verification gap:** this change was made in an environment with no `GEMINI_API_KEY` or
+`SARVAM_API_KEY` and no Docker daemon running, so none of the following were possible here and
+remain open before this can be called a proven latency win rather than a reasoned, tested widening
+of coverage:
+- `scripts/smoke-live-demo.py` end-to-end latency re-measurement against the 2,169 ms / 1,622–2,614 ms
+  baseline;
+- the 17-scenario live reasoning golden eval (≥90% gate) to confirm no grounding/quality regression
+  from the wider speculation floor;
+- the `container` CI job's local reproduction (verified by reading the Dockerfile/workflow instead;
+  the actual job runs in CI on this PR).
+
+**Verification performed:** Ruff (pinned `0.15.20`, matching CI) passed on `agent`, `web-demo/server.py`,
+`scripts/smoke-live-demo.py`, `eval/reasoning/run_eval.py`. Unit suite: **150 passed** (148 baseline +
+2 new — `test_short_stable_partial_can_now_speculate_down_to_the_shared_floor` in `test_persona.py`,
+`test_short_two_word_partial_now_masks_reasoning_latency` in `test_voice_review_flow.py`), matching
+CI's "pure" ubuntu tier (stdlib + pytest + numpy + aiohttp, no MLX). The macOS full-MLX-stack tier,
+the container boot smoke, and both live-provider gates run in CI itself on this PR and are the actual
+merge-worthy evidence; do not treat this local verification as a substitute for a green CI run.
+
+## 0030 — 2026-08-24 — Live verification of 0029: caching is dead on this tier, the coverage win is unproven
+
+**Status:** Golden eval passed live (139/144, 96.5%); two proposed levers investigated live and both
+came back negative or inconclusive. Recorded honestly rather than left as an untested recommendation.
+
+With both `GEMINI_API_KEY` and `SARVAM_API_KEY` available for the first time, four proposed follow-on
+levers were checked against live services before writing any more code.
+
+**Gemini context caching — dropped, verified dead on this account.** Explicit caching
+(`cachedContents` API) with the real `SYSTEM_PROMPT` (measured 1,991 prompt tokens) returned
+`429 RESOURCE_EXHAUSTED: TotalCachedContentStorageTokensPerModelFreeTier limit=0` — the free tier this
+project runs on (0005, 0028) has zero cache storage quota, full stop. Implicit/automatic caching was
+also checked directly: three identical-system-prompt calls in a row all reported
+`promptTokenCount: 1991` with no `cachedContentTokenCount` field, i.e. no discount is being applied
+either. Building explicit-caching code here would be dead code that always 429s. Not implemented.
+Revisit only if the project ever moves off the free tier.
+
+**Short-turn speculative coverage (0029) — real A/B run, result is not distinguishable from noise.**
+Built a synthetic-caller probe (adapted from `scripts/smoke-live-demo.py`, using Sarvam TTS instead of
+Piper to avoid a heavy local-voice install) sending the literal 2-word turn "What price?" through a
+live Sarvam→Gemini→Sarvam pipeline, run with `--barge-in` (required for the existing smoke protocol's
+event sequence). Two runs against this branch and two against a `main` worktree on the same machine,
+same keys, back to back:
+
+| Branch | Run 1 | Run 2 |
+|---|---:|---:|
+| `main` (baseline) | 2,001 ms | 1,822 ms |
+| this branch (0029) | 1,753 ms | 2,133 ms |
+
+Averages (1,943 ms vs 1,912 ms) are within the pipeline's own documented run-to-run variance
+(0022/0028 report a 1,622–2,614 ms range on nominally identical turns), so this sample cannot support
+a claim that the coverage-widening lever measurably helped. The live trace did confirm the mechanism
+itself fires correctly (`brain_state: speculation_committed` appeared for the 2-word turn, which is
+exactly the code path 0029 unblocked), so the *engineering* claim in 0029 stands — reachability was
+the bug, and it's fixed. The *latency* claim was always a hypothesis pending measurement, and the
+honest reading of this data is: **for a turn this short, there's very little ASR partial-to-final gap
+to hide Gemini's ~1.5 s call behind in the first place**, so even a perfectly-working coverage
+widening has a small, possibly negative-relative-to-noise ceiling on this exact case. A confident
+verdict needs a proper n≥10-per-arm run, not two.
+
+**Not yet attempted, still open:** sub-clause TTS streaming (start speaking the first sentence before
+the second finishes generating — currently `extract_complete_json_string` waits for the whole
+`talking_point` field), expanding the deterministic fast lane further (found to have less headroom
+than assumed: greeting, permission grant/deny, pause, presence-check, opt-out and ambiguous-change are
+*already* deterministic per 0019/0023 — the only remaining candidate, a canned closing line, was left
+alone because it trades against the explicit anti-robotic-script principle from 0020), tightening the
+120 ms partial-stability window, and loosening the 0.82 meaning-preservation threshold. All four need
+either new code (sub-clause streaming) or a proper statistically-powered live run (the two tuning
+knobs) that this session did not have the remaining time budget to do responsibly.
+
+**Verification:** live golden eval on `workflow_dispatch` (GitHub Actions run 32712061806) passed
+139/144 = 96.5% (gate ≥90%); container/lint/unit all green in the same run. The A/B probe script is
+throwaway (not committed — it lived in a scratch directory) since it duplicates
+`scripts/smoke-live-demo.py`'s protocol with one text substitution and isn't a durable eval asset by
+itself; a proper n≥10 short-turn benchmark belongs in `eval/bench/` as a follow-up, not as a one-off
+script.
+
+## 0031 — 2026-08-24 — Gemma checked against the same bar; local reasoning still doesn't clear it
+
+**Status:** Two additional local candidates tested live on this M5 (24 GB); no code change, no model
+adopted. Extends 0022 rather than reversing it.
+
+0022 rejected Qwen3.5-4B (too slow, no faster than Gemini) and Qwen3.5-0.8B (fast, but hallucinated
+facts outside the registry) as the reasoning model. Gemma was the named open item there. Two Gemma
+sizes were pulled via MLX (`mlx-community/gemma-3-4b-it-4bit`, `mlx-community/gemma-3-1b-it-4bit`) and
+run through the exact `persona.SYSTEM_PROMPT` + `persona.build_prompt` contract the live app uses,
+including the same decisive trap that caught Qwen3.5-0.8B (a question about amenities outside the
+fact registry) plus a second trap targeting the investment-returns policy line directly (the scenario
+Gemini's golden eval calls `investment-return-canary`).
+
+**Gemma3-4B-it (4-bit):** warm TTFT 2,858–3,142 ms — slower than Gemini's measured 1,189 ms average
+(0030), so no speed case exists regardless of quality. Quality was the best of any local candidate
+tested so far: it did not invent the amenities-outside-registry facts (correctly cited `fact_ids:
+["lifestyle"]` from real `PRODUCT_FACTS`), matching or beating Gemini's grounding on that specific
+trap. It did not clean up on the investment-returns trap, though: instead of a clear decline-and-
+redirect, it produced a hedged answer ("suggest a strong market position") that skirts the same line
+the system prompt explicitly forbids crossing. Better than fabrication, still not something to ship
+into an eval gate designed to catch exactly this pattern.
+
+**Gemma3-1B-it (4-bit):** warm TTFT 760–1,750 ms — competitive with or faster than Gemini. Quality
+failed outright and more severely than Qwen3.5-0.8B: duplicate JSON keys (`response_strategy` emitted
+twice), a `talking_point` whose entire content was the literal string `"explain_value"` (echoing a
+schema field name instead of generating text), non-Latin garbage tokens leaking into the output,
+runaway repetition of `<end_of_turn>`, invalid `fact_ids` that don't match `persona.FACT_REGISTRY`
+at all, and it ignored the investment-returns policy trap completely rather than hedging. This is
+below the bar the JSON boundary-validation in `parse_guidance` (`reasoning.py`) is written to catch
+and coerce — a production call would likely surface as a `ReasoningFailure`, not a bad-but-recoverable
+answer.
+
+**Not run:** DeepSeek-R1 distills. Deprioritized without downloading them — R1-style distills emit an
+explicit `<think>...</think>` reasoning trace as part of normal generation, which is architecturally
+the wrong shape for a voice pipeline regardless of raw decode speed: TTFT would be dominated by
+however long the model "thinks" before it starts the spoken answer, the same problem `thinkingBudget:
+0` exists to avoid for Gemini (0005). Worth a real test only if a distill variant with thinking
+disabled by default is identified.
+
+**Reading across all four local candidates tested (this entry + 0022):** every candidate sits on one
+side of the same line — fast and unreliable (Qwen3.5-0.8B, Gemma3-1B) or grounded-ish and slower than
+Gemini (Qwen3.5-4B, Gemma3-4B). None cleared both bars simultaneously. This is now four independent
+data points at two different size tiers from two different model families landing on the same
+tradeoff, which raises confidence this is a real property of small-model capability at this task's
+difficulty (an 11-field grounded JSON contract with a hard compliance line), not noise or a
+single-model quirk. The recommended next move, if this is worth another attempt, is not another
+off-the-shelf model at a new size — it's narrowing the *task* handed to a local model (e.g. generating
+only the grounded `talking_point` text from a fact-ID-constrained prompt, with intent/policy/action
+fields staying on deterministic code as most of them already are per 0019/0023), rather than asking a
+1–4B model to do the whole structured-output-plus-policy job Gemini currently does in one call.
+
+**Verification:** no code changed; this is a live measurement entry only. Both models were run through
+their full weight download and warm-cache inference on this machine (M5, 24 GB) via `mlx-lm`, not
+simulated. No repo tests were affected.
+
+## 0032 — 2026-08-24 — Duplex steering PoC: threshold hypothesis falsified, two additive levers found
+
+**Status:** Experiment complete, hypothesis refuted, engineering result retained. Localhost PoC only;
+the compliance layer is deliberately absent (see the scope boundary in `docs/DUPLEX_STEERING.md`).
+
+Revisited the full-duplex core that 0016 benched. The July benchmark had it at 240 ms handoff p50
+versus the cascade's 1,880 ms (`eval/bench/RESULTS.md`); it was removed for rambling and floor-grabbing,
+not for speed. The hypothesis was that "uncontrollable" was really "steered too slowly": Moshi emits a
+frame every 80 ms, so a 1,281 ms Gemini loop let it free-run ~16 frames — a whole self-chosen clause —
+before guidance landed.
+
+**Built:** `agent/duet_agent/fast_brain.py`, a local MLX steering brain that prefills the static prompt
+into a persistent KV cache so each turn pays ~25 delta tokens instead of ~1,981. Measured 798 ms → 172 ms
+TTFT (4.6x), median 279 ms per turn standalone. This is the same caching win Gemini's free tier refused
+in 0030, available locally because the KV cache is ours. Also `eval/duplex/sweep_steering_latency.py`,
+which drives real Moshi q4 with cached Sarvam caller audio and varies one parameter at a time.
+
+**Verified prerequisites on this M5:** Moshi q4 steps at 30.0 ms p50 / 31.6 ms p95 against the 80 ms
+frame budget (0.37x realtime, 48 ms headroom) — better than the July figures, and it still produces
+emergent turn-taking (said "Hey, what's going on?" into pure silence).
+
+**Result: the predicted threshold does not exist.** Free-run length rises smoothly with steering
+latency (2.42 → 3.75 → 8.50 → 11.08 tokens across 541/602/905/1305 ms) and commitment saturates at
+100% by ~900 ms. No knee. The hypothesis as stated is falsified.
+
+**What was actually found, unpredicted:** the injector's `quiet_frames_to_start` politeness window is a
+second governing parameter of comparable strength. At 6 frames it withholds injection for 480 ms
+regardless of brain speed, so a faster brain buys nothing until that moves. Sweeping it at natural brain
+speed: 2.25 / 2.25 / 4.00 / 6.17 / 5.92 free-run tokens at 1/2/4/6/10 frames. Combining both levers,
+best (q=1, local brain) versus July-equivalent (q=6, 1300 ms) is **11.08 → 2.25 free-run tokens (4.9x)**
+and **100% → 33.3% committed**. Real, useful, and not what was predicted.
+
+**Also unpredicted:** Moshi and the steering model contend for the same Metal device. `FastBrain`
+measured 279 ms standalone but 286–541 ms with Moshi stepping concurrently. Any latency budget assuming
+the standalone number is optimistic by up to 2x on one machine.
+
+**A wrong result was published to myself first and is recorded rather than deleted.** An initial sweep
+showed 0.00 free-run tokens at 170 ms — a spectacular apparent confirmation. It did not reproduce. Three
+defects: arms shared one `LmGen` so state leaked forward and eventually overran `max_steps` mid-sweep;
+`delay_ms` can only add latency, so nominal arms faster than the brain's natural speed were silently the
+same arm; and the striking number came from whichever arm ran first on fresh state. The harness now
+builds a fresh generator and codec per arm and prints measured steer latency beside the nominal value.
+
+**Follow-up that killed the remaining result (same day):** the 4.9x free-run improvement was
+validated on the July benchmark's own metrics via `eval/duplex/turntaking_ab.py` — same 10 scenarios,
+same Piper lessac caller voice, same RMS thresholds and scheduling constants, scored by the same
+`turntaking.py`. **The proxy win inverts.**
+
+| arm | takeover | overlap | handoff p50 | p95 | backchannels/call |
+|---|---:|---:|---:|---:|---:|
+| July baseline | 0.24 | 0.234 | 240 ms | 3,248 ms | 0.4 |
+| `julyish` q=6, 1300 ms | **0.43** | **0.232** | **372 ms** | **938 ms** | 0.20 |
+| `mid` q=4, natural | 0.69 | 0.368 | 1,756 ms | 3,602 ms | 1.20 |
+| `fast` q=1, natural | 0.69 | 0.328 | 3,084 ms | 4,914 ms | 1.10 |
+
+The slowest, most polite arm wins on every metric. The `fast` config that cut free-run tokens 4.9x has
+59% more takeovers, 41% more overlap and an 8x worse handoff p50. `quiet_frames_to_start` is protective,
+not overhead: shrinking it lets injection start while the caller is still speaking, reproducing exactly
+the floor-grabbing that benched the duplex core in 0016. Steering latency was never the binding
+constraint on duplex control, so the sub-1s duplex architecture this work set out to build is not
+supported and the best duplex configuration measured remains approximately the one the repo already had.
+
+`free_run_tokens` is withdrawn as a control-quality metric. It moved opposite to every metric that
+matters, and had this work shipped on the proxy it would have made the agent measurably ruder. The
+lesson generalizes past this experiment: a proxy invented in the same session as the hypothesis it
+supports needs validation against the metric the original claim was made in, before it is reported.
+
+**What survives:** `fast_brain.py`'s KV-cache result (798 ms -> 172 ms TTFT, 4.6x) is real and unaffected
+— it is a property of prompt caching, not of duplex steering, and remains useful anywhere the static
+prompt dominates prefill. `eval/duplex/turntaking_ab.py` is a durable A/B harness against the July
+baseline. Everything else in this direction is a negative result.
+
+**Verification:** Ruff clean on `agent`, `web-demo/server.py`, `scripts/`, `eval/reasoning`, and
+`eval/duplex`. Unit suite **155 passed** (150 + 5 new `test_fast_brain.py` covering the text handling
+that decides what reaches the speaker). Both sweeps are real Moshi + real Gemma runs, n=12 turns per arm.
+No human has listened to any of it: `free_run_tokens` and `committed_rate` are proxies for rambling, not
+naturalness, and `turntaking.py`'s takeover/overlap metrics are not yet wired into this harness.
+
 ## Running spend
 
 | Date | Item | Cost | Total |

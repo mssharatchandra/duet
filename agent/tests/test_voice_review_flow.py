@@ -292,6 +292,35 @@ def test_stable_partial_reasoning_is_held_then_committed_by_matching_final():
     assert any(event.get("state") == "speculation_committed" for event in events)
 
 
+def test_short_two_word_partial_now_masks_reasoning_latency():
+    # docs/DECISIONS.md 0029: previously any partial under 4 words was never sent
+    # for speculative reasoning, so short high-frequency turns (a two-word
+    # question, a quick answer) always paid full Gemini latency on the critical
+    # path. Lowering the shared floor to persona.MIN_SPECULATIVE_WORDS(=2) lets
+    # this class of turn mask reasoning behind the ASR partial-to-final gap too.
+    session, _spoken, events = _sdr_session()
+    session.sdr_permission = "granted"
+
+    class Brain:
+        def __init__(self):
+            self.calls = []
+
+        def request(self, history, text):
+            self.calls.append((list(history), text))
+            return len(self.calls)
+
+    brain = Brain()
+    history = []
+    partial = "what price"
+    session._start_speculative_reasoning(partial, history, brain)
+    session._accept_transcript("what price please", 45, history, brain)
+
+    assert len(brain.calls) == 1
+    assert session.latest_brain_request_id == 1
+    assert 1 in session.speculative_committed_ids
+    assert any(event.get("state") == "speculation_committed" for event in events)
+
+
 def test_changed_final_replaces_speculative_reasoning():
     session, _spoken, events = _sdr_session()
     session.sdr_permission = "granted"
