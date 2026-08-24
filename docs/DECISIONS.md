@@ -1032,6 +1032,64 @@ SHAs (checkout v7.0.1, setup-python v7.0.0, setup-uv v10.0.1). Infrastructure te
 Python 3.12 instead of inheriting a mutable runner default. This removes Node-runtime deprecation warnings and
 reduces third-party action supply-chain drift while keeping the human-readable release tag in comments.
 
+## 0029 — 2026-08-24 — Lower the speculative-reasoning word floor so short turns can mask latency too
+
+**Status:** Implemented and unit-verified; the live-provider latency win is NOT yet measured (no
+Gemini/Sarvam credentials were available in the environment that made this change).
+
+0022 and 0028 both name the same open gap: measured end-to-speech-audio sits at 1,622–2,614 ms
+(latest real run 2,169 ms, 0028), still well above the project's own 650–900 ms median target, and
+"the variance is mostly Gemini and whether a stable partial was available early enough." That
+sentence describes a coverage problem, not just a per-call latency problem: `_start_speculative_reasoning`
+(`web-demo/server.py`) and `persona.partial_matches_final` both required at least **4** stable
+interim words before a turn was eligible for speculative reasoning at all. Any turn that resolves in
+under four words — "what price", "site visit please", "yes I am", a two-word answer to a direct
+question — never got a speculative request fired, so 100% of Gemini's latency landed on the critical
+path for exactly the shortest, highest-frequency class of turn in a phone call.
+
+**Decision:** introduce `persona.MIN_SPECULATIVE_WORDS = 2`, shared by both the speculative-start
+gate and the commit-eligibility floor in `partial_matches_final` so the two can never disagree about
+what counts as speculatable (starting speculation at a floor the commit check would immediately
+reject would just waste a Gemini call for zero latency benefit — the two gates must move together).
+Existing safety filters are unchanged: `is_opt_out`, `is_ambiguous_change`, `is_backchannel` and the
+0.82 `SequenceMatcher` / 0.65 prefix-ratio meaning-preservation check on `partial_matches_final`
+still gate every commit exactly as before. This widens *coverage* of speculation, not its safety
+bar.
+
+**Why not lower further, or touch the 120 ms stability window instead:** a 1-word floor was
+considered and rejected — a single word ("what", "site") carries essentially no committable meaning
+and firing reasoning on it would mostly produce wasted, always-replaced Gemini calls (cost, and
+quota pressure against the 0028 RPM/RPD limiter) rather than masked latency. The 120 ms partial-
+stability window in the coordinator loop was left untouched: it is a provider-jitter debounce, not a
+coverage gate, and tightening it trades false-start rate for latency in a way that needs a live
+measurement to judge safely — exactly what this environment could not run (see below).
+
+**Alternatives considered and rejected:**
+| Option | Assessment |
+|---|---|
+| Reorder the Gemini JSON response schema so `talking_point` streams first | Rejected without a live eval run: `intent`/`response_strategy`/`next_action` currently precede `talking_point`, effectively letting the model classify before it commits to spoken words. Reordering could measurably help TTFT but risks quality regression on exactly the kind of case the 97%+ golden eval exists to catch, and this environment has no `GEMINI_API_KEY` to run that eval. Left as a follow-up requiring the maintainer's key. |
+| Swap Gemini for a local model | Already measured and rejected in 0022 (Qwen3.5-4B too slow, Qwen3.5-0.8B fast but ungrounded/hallucinating). Not revisited here; Gemma remains an open, untested candidate for a future decision entry. |
+| Loosen the 0.82 meaning-preservation threshold | Rejected: that is a correctness/safety knob (how much a committed speculative answer is allowed to drift from final meaning), not a coverage knob. Conflating the two would trade grounding safety for latency without measurement. |
+
+**Honest verification gap:** this change was made in an environment with no `GEMINI_API_KEY` or
+`SARVAM_API_KEY` and no Docker daemon running, so none of the following were possible here and
+remain open before this can be called a proven latency win rather than a reasoned, tested widening
+of coverage:
+- `scripts/smoke-live-demo.py` end-to-end latency re-measurement against the 2,169 ms / 1,622–2,614 ms
+  baseline;
+- the 17-scenario live reasoning golden eval (≥90% gate) to confirm no grounding/quality regression
+  from the wider speculation floor;
+- the `container` CI job's local reproduction (verified by reading the Dockerfile/workflow instead;
+  the actual job runs in CI on this PR).
+
+**Verification performed:** Ruff (pinned `0.15.20`, matching CI) passed on `agent`, `web-demo/server.py`,
+`scripts/smoke-live-demo.py`, `eval/reasoning/run_eval.py`. Unit suite: **150 passed** (148 baseline +
+2 new — `test_short_stable_partial_can_now_speculate_down_to_the_shared_floor` in `test_persona.py`,
+`test_short_two_word_partial_now_masks_reasoning_latency` in `test_voice_review_flow.py`), matching
+CI's "pure" ubuntu tier (stdlib + pytest + numpy + aiohttp, no MLX). The macOS full-MLX-stack tier,
+the container boot smoke, and both live-provider gates run in CI itself on this PR and are the actual
+merge-worthy evidence; do not treat this local verification as a substitute for a green CI run.
+
 ## Running spend
 
 | Date | Item | Cost | Total |

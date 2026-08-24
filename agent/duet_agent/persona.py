@@ -16,6 +16,12 @@ AGENT_NAME = "Aira"
 PROJECT_NAME = "ASBL Broadway"
 FACTS_VERIFIED_ON = "2026-08-23"
 
+# Below this, an interim transcript is too thin to safely start reasoning early
+# (docs/DECISIONS.md 0029). Shared by the speculative-start gate in
+# web-demo/server.py and the commit-eligibility floor in partial_matches_final
+# below so the two can never disagree about what counts as speculatable.
+MIN_SPECULATIVE_WORDS = 2
+
 # Claims supported by ASBL's public pages or the supplied CEO keynote.
 PRODUCT_FACTS = f"""\
 Project: ASBL Broadway, a premium residential project in Hyderabad's Financial District.
@@ -360,7 +366,7 @@ def partial_matches_final(partial: str, final: str, threshold: float = 0.82) -> 
     """Whether a speculative interim preserved the final turn's meaning closely enough."""
     partial_words = normalized_words(partial)
     final_words = normalized_words(final)
-    if len(partial_words) < 4 or not final_words:
+    if len(partial_words) < MIN_SPECULATIVE_WORDS or not final_words:
         return False
     left, right = " ".join(partial_words), " ".join(final_words)
     if right.startswith(left):

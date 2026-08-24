@@ -449,7 +449,7 @@ class Session:
             or persona.is_opt_out(text)
             or persona.is_ambiguous_change(text)
             or persona.is_backchannel(text)
-            or len(persona.normalized_words(text)) < 4
+            or len(persona.normalized_words(text)) < persona.MIN_SPECULATIVE_WORDS
         ):
             return
         if getattr(self, "speculative_request_id", 0):

@@ -113,6 +113,17 @@ def test_stable_partial_must_preserve_final_meaning():
     )
 
 
+def test_short_stable_partial_can_now_speculate_down_to_the_shared_floor():
+    # docs/DECISIONS.md 0029: lowered from 4 to MIN_SPECULATIVE_WORDS(=2) words so
+    # short high-frequency turns (a two-word question, a quick yes/no answer) are
+    # eligible for latency-masking speculation instead of always paying full
+    # Gemini latency on the critical path.
+    assert persona.partial_matches_final("what price", "what price please")
+    # Below the shared floor, still never eligible -- one word is too thin to
+    # safely commit reasoning to before the speaker has finished a thought.
+    assert not persona.partial_matches_final("what", "what price please")
+
+
 def test_transactional_requests_do_not_use_early_streamed_speech():
     assert persona.is_transactional_request("Send me the brochure on WhatsApp")
     assert persona.is_transactional_request("Please schedule a site visit")
