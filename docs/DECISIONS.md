@@ -1202,6 +1202,55 @@ fields staying on deterministic code as most of them already are per 0019/0023),
 their full weight download and warm-cache inference on this machine (M5, 24 GB) via `mlx-lm`, not
 simulated. No repo tests were affected.
 
+## 0032 — 2026-08-24 — Duplex steering PoC: threshold hypothesis falsified, two additive levers found
+
+**Status:** Experiment complete, hypothesis refuted, engineering result retained. Localhost PoC only;
+the compliance layer is deliberately absent (see the scope boundary in `docs/DUPLEX_STEERING.md`).
+
+Revisited the full-duplex core that 0016 benched. The July benchmark had it at 240 ms handoff p50
+versus the cascade's 1,880 ms (`eval/bench/RESULTS.md`); it was removed for rambling and floor-grabbing,
+not for speed. The hypothesis was that "uncontrollable" was really "steered too slowly": Moshi emits a
+frame every 80 ms, so a 1,281 ms Gemini loop let it free-run ~16 frames — a whole self-chosen clause —
+before guidance landed.
+
+**Built:** `agent/duet_agent/fast_brain.py`, a local MLX steering brain that prefills the static prompt
+into a persistent KV cache so each turn pays ~25 delta tokens instead of ~1,981. Measured 798 ms → 172 ms
+TTFT (4.6x), median 279 ms per turn standalone. This is the same caching win Gemini's free tier refused
+in 0030, available locally because the KV cache is ours. Also `eval/duplex/sweep_steering_latency.py`,
+which drives real Moshi q4 with cached Sarvam caller audio and varies one parameter at a time.
+
+**Verified prerequisites on this M5:** Moshi q4 steps at 30.0 ms p50 / 31.6 ms p95 against the 80 ms
+frame budget (0.37x realtime, 48 ms headroom) — better than the July figures, and it still produces
+emergent turn-taking (said "Hey, what's going on?" into pure silence).
+
+**Result: the predicted threshold does not exist.** Free-run length rises smoothly with steering
+latency (2.42 → 3.75 → 8.50 → 11.08 tokens across 541/602/905/1305 ms) and commitment saturates at
+100% by ~900 ms. No knee. The hypothesis as stated is falsified.
+
+**What was actually found, unpredicted:** the injector's `quiet_frames_to_start` politeness window is a
+second governing parameter of comparable strength. At 6 frames it withholds injection for 480 ms
+regardless of brain speed, so a faster brain buys nothing until that moves. Sweeping it at natural brain
+speed: 2.25 / 2.25 / 4.00 / 6.17 / 5.92 free-run tokens at 1/2/4/6/10 frames. Combining both levers,
+best (q=1, local brain) versus July-equivalent (q=6, 1300 ms) is **11.08 → 2.25 free-run tokens (4.9x)**
+and **100% → 33.3% committed**. Real, useful, and not what was predicted.
+
+**Also unpredicted:** Moshi and the steering model contend for the same Metal device. `FastBrain`
+measured 279 ms standalone but 286–541 ms with Moshi stepping concurrently. Any latency budget assuming
+the standalone number is optimistic by up to 2x on one machine.
+
+**A wrong result was published to myself first and is recorded rather than deleted.** An initial sweep
+showed 0.00 free-run tokens at 170 ms — a spectacular apparent confirmation. It did not reproduce. Three
+defects: arms shared one `LmGen` so state leaked forward and eventually overran `max_steps` mid-sweep;
+`delay_ms` can only add latency, so nominal arms faster than the brain's natural speed were silently the
+same arm; and the striking number came from whichever arm ran first on fresh state. The harness now
+builds a fresh generator and codec per arm and prints measured steer latency beside the nominal value.
+
+**Verification:** Ruff clean on `agent`, `web-demo/server.py`, `scripts/`, `eval/reasoning`, and
+`eval/duplex`. Unit suite **155 passed** (150 + 5 new `test_fast_brain.py` covering the text handling
+that decides what reaches the speaker). Both sweeps are real Moshi + real Gemma runs, n=12 turns per arm.
+No human has listened to any of it: `free_run_tokens` and `committed_rate` are proxies for rambling, not
+naturalness, and `turntaking.py`'s takeover/overlap metrics are not yet wired into this harness.
+
 ## Running spend
 
 | Date | Item | Cost | Total |
