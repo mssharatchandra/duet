@@ -1147,6 +1147,61 @@ throwaway (not committed — it lived in a scratch directory) since it duplicate
 itself; a proper n≥10 short-turn benchmark belongs in `eval/bench/` as a follow-up, not as a one-off
 script.
 
+## 0031 — 2026-08-24 — Gemma checked against the same bar; local reasoning still doesn't clear it
+
+**Status:** Two additional local candidates tested live on this M5 (24 GB); no code change, no model
+adopted. Extends 0022 rather than reversing it.
+
+0022 rejected Qwen3.5-4B (too slow, no faster than Gemini) and Qwen3.5-0.8B (fast, but hallucinated
+facts outside the registry) as the reasoning model. Gemma was the named open item there. Two Gemma
+sizes were pulled via MLX (`mlx-community/gemma-3-4b-it-4bit`, `mlx-community/gemma-3-1b-it-4bit`) and
+run through the exact `persona.SYSTEM_PROMPT` + `persona.build_prompt` contract the live app uses,
+including the same decisive trap that caught Qwen3.5-0.8B (a question about amenities outside the
+fact registry) plus a second trap targeting the investment-returns policy line directly (the scenario
+Gemini's golden eval calls `investment-return-canary`).
+
+**Gemma3-4B-it (4-bit):** warm TTFT 2,858–3,142 ms — slower than Gemini's measured 1,189 ms average
+(0030), so no speed case exists regardless of quality. Quality was the best of any local candidate
+tested so far: it did not invent the amenities-outside-registry facts (correctly cited `fact_ids:
+["lifestyle"]` from real `PRODUCT_FACTS`), matching or beating Gemini's grounding on that specific
+trap. It did not clean up on the investment-returns trap, though: instead of a clear decline-and-
+redirect, it produced a hedged answer ("suggest a strong market position") that skirts the same line
+the system prompt explicitly forbids crossing. Better than fabrication, still not something to ship
+into an eval gate designed to catch exactly this pattern.
+
+**Gemma3-1B-it (4-bit):** warm TTFT 760–1,750 ms — competitive with or faster than Gemini. Quality
+failed outright and more severely than Qwen3.5-0.8B: duplicate JSON keys (`response_strategy` emitted
+twice), a `talking_point` whose entire content was the literal string `"explain_value"` (echoing a
+schema field name instead of generating text), non-Latin garbage tokens leaking into the output,
+runaway repetition of `<end_of_turn>`, invalid `fact_ids` that don't match `persona.FACT_REGISTRY`
+at all, and it ignored the investment-returns policy trap completely rather than hedging. This is
+below the bar the JSON boundary-validation in `parse_guidance` (`reasoning.py`) is written to catch
+and coerce — a production call would likely surface as a `ReasoningFailure`, not a bad-but-recoverable
+answer.
+
+**Not run:** DeepSeek-R1 distills. Deprioritized without downloading them — R1-style distills emit an
+explicit `<think>...</think>` reasoning trace as part of normal generation, which is architecturally
+the wrong shape for a voice pipeline regardless of raw decode speed: TTFT would be dominated by
+however long the model "thinks" before it starts the spoken answer, the same problem `thinkingBudget:
+0` exists to avoid for Gemini (0005). Worth a real test only if a distill variant with thinking
+disabled by default is identified.
+
+**Reading across all four local candidates tested (this entry + 0022):** every candidate sits on one
+side of the same line — fast and unreliable (Qwen3.5-0.8B, Gemma3-1B) or grounded-ish and slower than
+Gemini (Qwen3.5-4B, Gemma3-4B). None cleared both bars simultaneously. This is now four independent
+data points at two different size tiers from two different model families landing on the same
+tradeoff, which raises confidence this is a real property of small-model capability at this task's
+difficulty (an 11-field grounded JSON contract with a hard compliance line), not noise or a
+single-model quirk. The recommended next move, if this is worth another attempt, is not another
+off-the-shelf model at a new size — it's narrowing the *task* handed to a local model (e.g. generating
+only the grounded `talking_point` text from a fact-ID-constrained prompt, with intent/policy/action
+fields staying on deterministic code as most of them already are per 0019/0023), rather than asking a
+1–4B model to do the whole structured-output-plus-policy job Gemini currently does in one call.
+
+**Verification:** no code changed; this is a live measurement entry only. Both models were run through
+their full weight download and warm-cache inference on this machine (M5, 24 GB) via `mlx-lm`, not
+simulated. No repo tests were affected.
+
 ## Running spend
 
 | Date | Item | Cost | Total |
