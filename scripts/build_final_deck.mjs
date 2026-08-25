@@ -51,7 +51,7 @@ const specs = [
   { n: 13, title: "Why Gemini won our reasoning gate", kind: "quadrant", body: ["grounded", "structured", "tool-capable", "fast enough"], source: "Gemini 3.1 Flash Lite docs · Decisions 0021–0022" },
   { n: 14, title: "Local reasoning: the speed–reliability wall", kind: "modeltable", rows: [["Qwen 0.8B", "153 ms", "fast, invented facts"], ["Qwen 4B", "1,623 ms", "relevant, too slow"], ["Gemma 1B", "760–1,750 ms", "schema / policy failures"], ["Gemma 4B", "2,858–3,142 ms", "grounded sample, slower than Gemini"], ["Gemini Flash Lite", "1,120 ms", "132/136 grounded-policy checks · chosen"]], source: "Local model measurements · Decisions 0021–0022" },
   { n: 15, title: "Moshi proved speed—and failed control", kind: "compare", rows: [["", "Handoff p50", "Takeover", "Overlap"], ["Moshi duplex", "240 ms", "0.24", "0.234"], ["Cascade", "1,880 ms", "0.00", "0.053"]], body: "In simple terms: it answered quickly, but often spoke at the wrong time.", source: "Moshi paper · eval/bench/RESULTS.md" },
-  { n: 16, title: "Experiment 1: earlier speculation ≠ proven speed", kind: "nearbars", data: [["Before", 1943], ["Two-word speculation", 1912]], body: ["n = 2 live runs", "Result: noise, not a win."], source: "GitHub PR #1 · Widen speculative-reasoning coverage" },
+  { n: 16, title: "Experiment 1: earlier speculation did not prove speed", kind: "nearbars", data: [["Before", 1943], ["Two-word speculation", 1912]], body: ["Start reasoning after two stable words, rather than wait for four.", "The reply should begin meaningfully sooner.", "31 ms difference across two live runs.", "Too small and too few runs: noise, not a proven speedup."], source: "GitHub PR #1 · Widen speculative-reasoning coverage" },
   { n: 17, title: "Experiment 2: the proxy win inverted", kind: "inversion", body: ["4.9× fewer free-run tokens", "+59% takeovers", "+41% overlap", "8× worse handoff"], source: "GitHub PR #2 · docs/DUPLEX_STEERING.md" },
   { n: 18, title: "Evals are the new PRDs", kind: "loop", body: ["scenario", "metric", "threshold", "regression test"], source: "Duet CI and eval harnesses" },
   { n: 19, title: "The model does not own trust", kind: "guard", body: ["consent", "opt-out", "claims", "staleness", "capabilities"], source: "Duet policy and action adapters" },
@@ -360,17 +360,28 @@ function render(spec, slide) {
     addText(slide, "Moshi", 322, 592, 95, 24, 12, C.coral, { bold: true, align: "center" });
     addText(slide, spec.body, 160, 622, 960, 24, 15, C.navy, { bold: true, align: "center" });
   } else if (spec.kind === "nearbars") {
-    const max = 2050;
-    spec.data.forEach((d, i) => {
-      const x = 210 + i * 420;
-      const h = 260 * d[1] / max;
-      addShape(slide, "roundRect", x, 530 - h, 260, h, i ? C.cyan : C.line, "none", 0, 18);
-      addText(slide, `${d[1].toLocaleString()} ms`, x, 250, 260, 50, 26, C.navy, { mono: true, bold: true, align: "center" });
-      addText(slide, d[0], x, 545, 260, 40, 16, C.navy, { bold: true, align: "center" });
-    });
-    addShape(slide, "roundRect", 164, 210, 952, 340, "#E8F3F6/35", C.cyan, 1, 24);
-    addText(slide, "31 ms", 552, 446, 176, 42, 24, C.coral, { mono: true, bold: true, align: "center", fill: C.cream2, radius: 16 });
-    addText(slide, "within variance · n = 2", 410, 610, 460, 32, 18, C.coral, { bold: true, align: "center" });
+    const [thesis, expected, result, verdict] = spec.body;
+    addShape(slide, "roundRect", 82, 210, 536, 108, C.cream2, C.line, 1, 16);
+    addText(slide, "THE THESIS", 106, 228, 180, 20, 12, C.cyan, { bold: true });
+    addText(slide, thesis, 106, 254, 476, 44, 17, C.navy, { bold: true });
+    addShape(slide, "roundRect", 662, 210, 536, 108, "#E8F3F6", C.line, 1, 16);
+    addText(slide, "WHAT WE EXPECTED", 686, 228, 220, 20, 12, C.cyan, { bold: true });
+    addText(slide, expected, 686, 254, 476, 44, 17, C.navy, { bold: true });
+
+    addShape(slide, "roundRect", 82, 350, 1116, 168, "#F6FBFC", C.line, 1, 18);
+    addText(slide, "BASELINE", 112, 374, 220, 20, 12, C.muted, { bold: true });
+    addText(slide, `${spec.data[0][1].toLocaleString()} ms`, 112, 402, 300, 44, 30, C.navy, { mono: true, bold: true });
+    addText(slide, "wait for four stable words", 112, 452, 320, 26, 15, C.muted);
+    line(slide, 528, 378, 528, 490, C.line, 1);
+    addText(slide, "TWO-WORD SPECULATION", 566, 374, 270, 20, 12, C.teal, { bold: true });
+    addText(slide, `${spec.data[1][1].toLocaleString()} ms`, 566, 402, 300, 44, 30, C.teal, { mono: true, bold: true });
+    addText(slide, "start from two stable words", 566, 452, 300, 26, 15, C.muted);
+    addText(slide, "31 ms", 930, 390, 200, 40, 28, C.coral, { mono: true, bold: true, align: "center", fill: C.cream2, radius: 16 });
+    addText(slide, result, 890, 438, 280, 30, 14, C.muted, { bold: true, align: "center" });
+
+    addShape(slide, "roundRect", 190, 558, 900, 64, "#FCEAE6", "none", 0, 16);
+    addText(slide, "HONEST VERDICT", 214, 576, 160, 20, 12, C.coral, { bold: true });
+    addText(slide, verdict, 392, 570, 660, 32, 17, C.navy, { bold: true, align: "center" });
   } else if (spec.kind === "inversion") {
     addText(slide, spec.body[0], 120, 244, 400, 104, 30, C.cream2, { fill: C.teal, radius: 24, bold: true, align: "center" });
     addText(slide, "PROXY ✓", 235, 214, 170, 24, 12, C.teal, { bold: true, align: "center" });

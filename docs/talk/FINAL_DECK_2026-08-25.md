@@ -325,22 +325,24 @@ product path because controllability and clarity mattered more than a median lat
 
 ---
 
-## Slide 16 — Experiment 1: earlier speculation ≠ proven speed
+## Slide 16 — Experiment 1: earlier speculation did not prove speed
 
 **Visible**
 
-Two-word turns became speculatable.
+**The thesis**: start reasoning after two stable words rather than wait for four.
 
-Measured A/B: `1,943 ms` vs `1,912 ms`
+**What we expected**: a meaningfully earlier spoken reply.
 
-Result: noise, not a win.
+**Measured A/B**: `1,943 ms` vs `1,912 ms` — a 31 ms difference across two live runs.
 
-**Visual**: Two nearly identical bars inside a shaded variance band.
+**Plain-English takeaway**: the change worked technically, but the measured difference was too small and the sample too small to call it faster.
+
+**Visual**: a clean thesis → expectation → measurement → honest verdict flow.
 
 **Speaker notes**: PR #1 lowered the stable-partial floor from four words to two while preserving opt-out,
 ambiguity and semantic-confirmation gates. The mechanism fired correctly, but n=2 live runs could not separate
-the result from variance. Gemini explicit cache storage was unavailable on the free tier, and implicit caching
-did not engage. We recorded the gap rather than claiming a win.
+the 31 ms gap from normal variance. Gemini explicit cache storage was unavailable on the free tier, and implicit
+caching did not engage. We recorded the negative result rather than claiming a win.
 
 **Source**: GitHub PR #1, “Widen speculative-reasoning coverage to short turns.”
 
