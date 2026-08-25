@@ -309,7 +309,7 @@ function render(spec, slide) {
       addText(slide, String(level), 184, y - 12, 32, 24, 13, C.navy, { mono: true, bold: true, align: "right" });
     }
     line(slide, left, top, left, bottom, C.navy, 2);
-    addText(slide, "GROUNDING / POLICY\nEVIDENCE", 78, 300, 142, 28, 10, C.cyan, { bold: true });
+    addText(slide, "GROUNDING / POLICY EVIDENCE ↑", 250, 284, 260, 18, 11, C.cyan, { bold: true });
     addText(slide, "0  known failure", 78, 550, 140, 18, 11, C.muted);
     addText(slide, "3  evaluated gate", 78, 316, 140, 18, 11, C.muted);
     [0, 800, 1600, 2400, 3200].forEach((ms) => {
