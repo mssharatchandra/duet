@@ -217,7 +217,9 @@ WER at 5 dB noise ↓
 
 `base.en 14.1%`  `small.en 8.7%`  `MLX Whisper 3.4%`  `Parakeet 2.7%`
 
-**Visual**: Four descending bars, one highlight on Parakeet.
+In a noisy call, ASR choice determines what the agent believes before reasoning begins.
+
+**Visual**: Four descending bars, one highlight on Parakeet, plus one operational takeaway below the chart.
 
 **Speaker notes**: The first clean synthetic eval was too easy and could not discriminate. We added seeded noise,
 reverb, speed perturbation and clipping. The ranking then became clear and even reversed an earlier decision.

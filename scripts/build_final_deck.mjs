@@ -278,6 +278,7 @@ function render(spec, slide) {
       addShape(slide, "roundRect", 282, y + 5, 780 * d[1] / max, 32, i === 3 ? C.teal : (i === 0 ? C.coral : C.cyan), "none", 0, 12);
       addText(slide, `${d[1]}%`, 1090, y, 90, 42, 18, i === 3 ? C.teal : C.navy, { mono: true, bold: true, align: "right" });
     });
+    addText(slide, "In a noisy call, ASR choice determines what the agent believes before reasoning begins.", 130, 574, 1020, 42, 21, C.navy, { bold: true, align: "center" });
   } else if (spec.kind === "timeline") {
     addText(slide, spec.label, 90, 208, 300, 36, 18, C.muted, { bold: true });
     line(slide, 130, 358, 1135, 358, C.line, 5);
