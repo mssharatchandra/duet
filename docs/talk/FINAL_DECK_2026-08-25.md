@@ -40,21 +40,7 @@ voice systems feel human—and what makes them fail.
 
 ---
 
-## Slide 2 — Live demo
-
-**Visible**
-
-LIVE
-
-**Visual**: Empty 16:9 video frame with a thin cyan keyline over the arch background. No other content.
-
-**Speaker notes**: Insert the recorded Aira demo here. Show: disclosure and permission; one project question;
-one interruption; one brochure or site-visit action; the visible decision trace. Do not improvise with a live
-cloud model tomorrow. The recording path uses the local grounded demo planner so Gemini quota cannot break it.
-
----
-
-## Slide 3 — A voice agent is a real-time control system
+## Slide 2 — A voice agent is a real-time control system
 
 **Visible**
 
@@ -71,7 +57,7 @@ voice setting.
 
 ---
 
-## Slide 4 — The 80/20 glossary
+## Slide 3 — The 80/20 glossary
 
 **Visible**
 
@@ -93,7 +79,7 @@ total synthesis time. The listener experiences the composition plus transport an
 
 ---
 
-## Slide 5 — The waterfall tax
+## Slide 4 — The waterfall tax
 
 **Visible**
 
@@ -112,7 +98,7 @@ our own latency gate.
 
 ---
 
-## Slide 6 — Fast models do not guarantee a fast conversation
+## Slide 5 — Fast models do not guarantee a fast conversation
 
 **Visible**
 
@@ -128,7 +114,7 @@ answer that starts before the user finishes is not low latency; it is an interru
 
 ---
 
-## Slide 7 — Duet’s thesis: guarded speculative duplex
+## Slide 6 — Duet’s thesis: guarded speculative duplex
 
 **Visible**
 
@@ -148,7 +134,7 @@ carries cancellation state. This is our candidate engineering contribution; conc
 
 ---
 
-## Slide 8 — Concurrent lanes, causal gates
+## Slide 7 — Concurrent lanes, causal gates
 
 **Visible**
 
@@ -170,7 +156,7 @@ speech immediately and create a new conversational state.
 
 ---
 
-## Slide 9 — What runs inside Aira
+## Slide 8 — What runs inside Aira
 
 **Visible**
 
@@ -185,6 +171,20 @@ and speech events. Duet assembles turns, owns consent, barge-in, stale-response 
 Gemini Flash Lite plans grounded responses. An action adapter records or calls brochure, callback, CRM and
 site-visit tools. Bulbul v3 uses a pre-warmed persistent WebSocket. The local demo planner is a quota-independent
 fallback—not the production intelligence path.
+
+---
+
+## Slide 9 — Live demo
+
+**Visible**
+
+LIVE
+
+**Visual**: Empty 16:9 video frame with a thin cyan keyline over the arch background. No other content.
+
+**Speaker notes**: Insert the recorded Aira demo here. Show: disclosure and permission; one project question;
+one interruption; one brochure or site-visit action; the visible decision trace. Do not improvise with a live
+cloud model tomorrow. The recording path uses the local grounded demo planner so Gemini quota cannot break it.
 
 ---
 
