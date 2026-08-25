@@ -312,6 +312,8 @@ hardware; do not generalize this Apple M5 result into “local models are bad.�
 | Moshi duplex | **240 ms** | 0.24 | 0.234 |
 | Cascade | 1,880 ms | **0.00** | **0.053** |
 
+**Plain-English takeaway**: It answered quickly, but often spoke at the wrong time.
+
 **Visual**: A trade-off line: fast ↔ polite.
 
 **Speaker notes**: Moshi models caller and agent audio as parallel streams and has roughly 200 ms practical

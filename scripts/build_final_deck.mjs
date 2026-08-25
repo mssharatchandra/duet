@@ -50,7 +50,7 @@ const specs = [
   { n: 12, title: "TTS: optimize the clock people hear", kind: "timeline", label: "Time to first audio", data: [["Piper", 83], ["Sarvam warm", 223], ["Kokoro", 380]], source: "eval/tts/README.md · Decision 0022" },
   { n: 13, title: "Why Gemini won our reasoning gate", kind: "quadrant", body: ["grounded", "structured", "tool-capable", "fast enough"], source: "Gemini 3.1 Flash Lite docs · Decisions 0021–0022" },
   { n: 14, title: "Local reasoning: the speed–reliability wall", kind: "modeltable", rows: [["Qwen 0.8B", "153 ms", "fast, invented facts"], ["Qwen 4B", "1,623 ms", "relevant, too slow"], ["Gemma 1B", "760–1,750 ms", "schema / policy failures"], ["Gemma 4B", "2,858–3,142 ms", "grounded sample, slower than Gemini"], ["Gemini Flash Lite", "1,120 ms", "132/136 grounded-policy checks · chosen"]], source: "Local model measurements · Decisions 0021–0022" },
-  { n: 15, title: "Moshi proved speed—and failed control", kind: "compare", rows: [["", "Handoff p50", "Takeover", "Overlap"], ["Moshi duplex", "240 ms", "0.24", "0.234"], ["Cascade", "1,880 ms", "0.00", "0.053"]], source: "Moshi paper · eval/bench/RESULTS.md" },
+  { n: 15, title: "Moshi proved speed—and failed control", kind: "compare", rows: [["", "Handoff p50", "Takeover", "Overlap"], ["Moshi duplex", "240 ms", "0.24", "0.234"], ["Cascade", "1,880 ms", "0.00", "0.053"]], body: "In simple terms: it answered quickly, but often spoke at the wrong time.", source: "Moshi paper · eval/bench/RESULTS.md" },
   { n: 16, title: "Experiment 1: earlier speculation ≠ proven speed", kind: "nearbars", data: [["Before", 1943], ["Two-word speculation", 1912]], body: ["n = 2 live runs", "Result: noise, not a win."], source: "GitHub PR #1 · Widen speculative-reasoning coverage" },
   { n: 17, title: "Experiment 2: the proxy win inverted", kind: "inversion", body: ["4.9× fewer free-run tokens", "+59% takeovers", "+41% overlap", "8× worse handoff"], source: "GitHub PR #2 · docs/DUPLEX_STEERING.md" },
   { n: 18, title: "Evals are the new PRDs", kind: "loop", body: ["scenario", "metric", "threshold", "regression test"], source: "Duet CI and eval harnesses" },
@@ -358,6 +358,7 @@ function render(spec, slide) {
     addText(slide, "polite", 1020, 555, 100, 28, 14, C.teal, { bold: true, align: "right" });
     addShape(slide, "ellipse", 355, 556, 28, 28, C.coral, "none", 0);
     addText(slide, "Moshi", 322, 592, 95, 24, 12, C.coral, { bold: true, align: "center" });
+    addText(slide, spec.body, 160, 622, 960, 24, 15, C.navy, { bold: true, align: "center" });
   } else if (spec.kind === "nearbars") {
     const max = 2050;
     spec.data.forEach((d, i) => {
