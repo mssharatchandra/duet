@@ -532,16 +532,19 @@ the human conversation where trust and negotiation matter.
 
 **Visible**
 
-`session isolation`  `telephony`  `DNC`  `human transfer`
+`session isolation`  `telephony`  `Do Not Call (DNC)`  `human transfer`
 
 `SLOs`  `load tests`  `replay`  `retention`  `incident response`
+
+**Plain-English takeaway**: A production agent is a reliable call system: every conversation must be safe, observable and recoverable at scale.
 
 **Visual**: Nine small production “rivets” holding a single call line.
 
 **Speaker notes**: Commercial systems win through operational maturity: carrier integrations, regional routing,
 echo control, retries and circuit breakers, versioned prompts, campaign controls, abuse prevention, recordings
-and deletion, quality sampling, on-call alerts and graceful human handoff. The current app is single-session and
-browser-first. It is a strong instrument and demo, not yet an outbound production dialer.
+and deletion, quality sampling, on-call alerts and graceful human handoff. “Do Not Call (DNC)” is the persisted
+suppression list that prevents prohibited or opted-out contacts from being called. The current app is
+single-session and browser-first; these are the production capabilities still needed before outbound use.
 
 ---
 
@@ -612,7 +615,7 @@ claim.
   this use case. We keep evaluating it.
 - **Why not a 20B local LLM?** Quality may improve, but the current laptop latency and contention do not meet the
   voice budget. Test on a production GPU with the same gates.
-- **Can this call customers tomorrow?** No. Registered telephony, DNC persistence, per-call isolation, human
+- **Can this call customers tomorrow?** No. Registered telephony, Do Not Call (DNC) persistence, per-call isolation, human
   transfer and a consented pilot are P0.
 - **What is defensible?** Interaction state, eval data, domain workflows, reliability and the feedback loop—not
   commodity access to ASR, LLM or TTS.
