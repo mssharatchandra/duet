@@ -356,6 +356,10 @@ Proxy: `4.9× fewer free-run tokens` ✓
 
 Reality: `+59% takeovers` · `+41% overlap` · `8× worse handoff` ✕
 
+**Plain-English takeaway**: we made the bot wait less; it then interrupted people more often.
+
+**Eval rule**: *Eval the behaviour you care about—not the proxy that flatters your optimization.*
+
 **Visual**: A green proxy arrow flipping into three coral real-metric arrows.
 
 **Speaker notes**: PR #2 used a local KV-cached brain and shortened Moshi’s quiet window. The first proxy looked

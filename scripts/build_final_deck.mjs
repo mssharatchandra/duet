@@ -52,7 +52,7 @@ const specs = [
   { n: 14, title: "Local reasoning: the speed–reliability wall", kind: "modeltable", rows: [["Qwen 0.8B", "153 ms", "fast, invented facts"], ["Qwen 4B", "1,623 ms", "relevant, too slow"], ["Gemma 1B", "760–1,750 ms", "schema / policy failures"], ["Gemma 4B", "2,858–3,142 ms", "grounded sample, slower than Gemini"], ["Gemini Flash Lite", "1,120 ms", "132/136 grounded-policy checks · chosen"]], source: "Local model measurements · Decisions 0021–0022" },
   { n: 15, title: "Moshi proved speed—and failed control", kind: "compare", rows: [["", "Handoff p50", "Takeover", "Overlap"], ["Moshi duplex", "240 ms", "0.24", "0.234"], ["Cascade", "1,880 ms", "0.00", "0.053"]], body: "In simple terms: it answered quickly, but often spoke at the wrong time.", source: "Moshi paper · eval/bench/RESULTS.md" },
   { n: 16, title: "Experiment 1: earlier speculation did not prove speed", kind: "nearbars", data: [["Before", 1943], ["Two-word speculation", 1912]], body: ["Start reasoning after two stable words, rather than wait for four.", "The reply should begin meaningfully sooner.", "31 ms difference across two live runs.", "Too small and too few runs: noise, not a proven speedup."], source: "GitHub PR #1 · Widen speculative-reasoning coverage" },
-  { n: 17, title: "Experiment 2: the proxy win inverted", kind: "inversion", body: ["4.9× fewer free-run tokens", "+59% takeovers", "+41% overlap", "8× worse handoff"], source: "GitHub PR #2 · docs/DUPLEX_STEERING.md" },
+  { n: 17, title: "Experiment 2: the proxy win inverted", kind: "inversion", body: ["4.9× fewer free-run tokens", "+59% takeovers", "+41% overlap", "8× worse handoff"], caption: "In simple terms: we made the bot wait less; it interrupted people more often.", lesson: "EVAL RULE  ·  Eval the behaviour you care about—not the proxy that flatters your optimization.", source: "GitHub PR #2 · docs/DUPLEX_STEERING.md" },
   { n: 18, title: "Evals are the new PRDs", kind: "loop", body: ["scenario", "metric", "threshold", "regression test"], source: "Duet CI and eval harnesses" },
   { n: 19, title: "The model does not own trust", kind: "guard", body: ["consent", "opt-out", "claims", "staleness", "capabilities"], source: "Duet policy and action adapters" },
   { n: 20, title: "If you cannot replay it, you cannot improve it", kind: "observability", body: ["Langfuse", "Prometheus + Grafana", "Postgres", "JSONL / Loki"], source: "Duet observability stack" },
@@ -389,7 +389,8 @@ function render(spec, slide) {
     addText(slide, "→", 610, 262, 60, 60, 44, C.coral, { bold: true, align: "center" });
     addText(slide, "REALITY ✕", 824, 214, 180, 24, 12, C.coral, { bold: true, align: "center" });
     spec.body.slice(1).forEach((t, i) => addText(slide, t, 730, 246 + i * 104, 390, 72, 25, C.cream2, { fill: C.coral, radius: 18, bold: true, align: "center" }));
-    addText(slide, "The quiet window was protective—not wasted latency.", 160, 590, 960, 46, 25, C.navy, { bold: true, align: "center" });
+    addText(slide, spec.caption, 160, 568, 960, 34, 20, C.navy, { bold: true, align: "center" });
+    addText(slide, spec.lesson, 160, 612, 960, 30, 15, C.teal, { bold: true, align: "center", fill: "#E8F3F6", radius: 14 });
   } else if (spec.kind === "loop") {
     const pts = [[130, 290], [390, 220], [700, 220], [960, 290]];
     spec.body.forEach((t, i) => {
