@@ -415,19 +415,23 @@ IDs. The UI exposes an inspectable decision trace—intent, evidence, policy, fa
 
 **Visible**
 
-Langfuse — per-call trace
+Langfuse — replay model + tool decisions
 
-Prometheus + Grafana — latency and reliability
+Prometheus + Grafana — spot latency + error regressions
 
-Postgres — correlated call outcomes
+Postgres — join turns, actions + outcomes
 
-JSONL / Loki — structured events
+JSONL / Loki — diagnose event-level failures
+
+**Why it matters**: observability closes the loop—real failures become better eval cases before the next release.
 
 **Visual**: One trace ID connecting four stores.
 
 **Speaker notes**: Telemetry is asynchronous and never blocks audio. Every session shares a trace ID across
 voice spans and the durable call record. Content is redacted by default. The latest four-minute demo produced 78
-Langfuse observations, 11 user utterances, three playback cancellations and two accepted local actions.
+Langfuse observations, 11 user utterances, three playback cancellations and two accepted local actions. When a
+trace reveals a failure pattern—an interruption miss, stale answer or action error—we turn that pattern into a
+new eval scenario and regression test.
 
 ---
 

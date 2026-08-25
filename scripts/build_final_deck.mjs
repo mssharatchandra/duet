@@ -55,7 +55,7 @@ const specs = [
   { n: 17, title: "Experiment 2: the proxy win inverted", kind: "inversion", body: ["4.9× fewer free-run tokens", "+59% takeovers", "+41% overlap", "8× worse handoff"], caption: "In simple terms: we made the bot wait less; it interrupted people more often.", lesson: "EVAL RULE  ·  Eval the behaviour you care about—not the proxy that flatters your optimization.", source: "GitHub PR #2 · docs/DUPLEX_STEERING.md" },
   { n: 18, title: "Evals are the new PRDs", kind: "loop", body: ["scenario", "metric", "threshold", "regression test"], caption: "Why: live calls reveal failures a prompt cannot. We made each one a repeatable test.", source: "Duet CI and eval harnesses" },
   { n: 19, title: "The model does not own trust", kind: "guard", body: ["consent", "opt-out", "claims", "staleness", "capabilities"], caption: "Why: models can be wrong. They propose; deterministic code verifies consent, facts and permissions before speech or action.", source: "Duet policy and action adapters" },
-  { n: 20, title: "If you cannot replay it, you cannot improve it", kind: "observability", body: ["Langfuse", "Prometheus + Grafana", "Postgres", "JSONL / Loki"], source: "Duet observability stack" },
+  { n: 20, title: "If you cannot replay it, you cannot improve it", kind: "observability", body: [["01", "Langfuse", "Why: replay model + tool decisions."], ["02", "Prometheus + Grafana", "Why: spot latency + error regressions."], ["03", "Postgres", "Why: join turns, actions + outcomes."], ["04", "JSONL / Loki", "Why: diagnose event-level failures."]], caption: "Observability closes the loop: real failures become better eval cases before the next release.", subcaption: "Asynchronous telemetry—never on the audio path.", source: "Duet observability stack" },
   { n: 21, title: "Latest Aira run: fast, with one measurement bug", kind: "run", data: [["median response start", "443 ms"], ["interruptions", "3"], ["actions", "2"], ["user turns", "11"]], body: ["p95 invalid — unmatched turn at session cutoff"], source: "Session 1787592808-61dd64 · trace 9722afa5…" },
   { n: 22, title: "Aira vs Sarvam Voice Agents: honest comparison", kind: "vendorbars", data: [["Aira local-plan", 443, "measured · one session"], ["Aira Gemini", 2260, "measured · rich response"], ["Sarvam", 500, "vendor claim · definition unpublished"]], source: "Duet traces · Sarvam Voice Agents product page" },
   { n: 23, title: "Why India is a voice market", kind: "numbers", data: [["22", "official languages"], ["2M+", "voice conversations/day¹"], ["₹3.50", "per minute¹"], ["$6.3M", "Bolna seed · 2026"]], source: "¹Sarvam claims · Bolna funding announcement" },
@@ -417,14 +417,22 @@ function render(spec, slide) {
     addShape(slide, "ellipse", 530, 282, 220, 150, C.coral, "none", 0);
     addText(slide, "TRACE ID", 558, 315, 164, 84, 25, C.cream2, { mono: true, bold: true, align: "center" });
     const pts = [[92, 220], [810, 220], [92, 470], [810, 470]];
-    spec.body.forEach((t, i) => {
-      card(slide, `${String(i + 1).padStart(2, "0")}`, t, pts[i][0], pts[i][1], 300, 118, i === 0 ? C.teal : C.cyan);
+    spec.body.forEach((item, i) => {
+      const [index, title, why] = item;
+      const [x, y] = pts[i];
+      const accent = i === 0 ? C.teal : C.cyan;
+      addShape(slide, "roundRect", x, y, 300, 118, C.cream2, C.line, 1, 18);
+      addShape(slide, "rect", x, y, 7, 118, accent, accent, 0, 3);
+      addText(slide, index, x + 24, y + 15, 38, 20, 12, accent, { bold: true });
+      addText(slide, title, x + 24, y + 43, 252, 28, 18, C.navy, { bold: true });
+      addText(slide, why, x + 24, y + 78, 252, 22, 13, C.muted, { bold: true });
     });
     line(slide, 392, 279, 485, 279, C.line, 2); line(slide, 485, 279, 485, 357, C.line, 2); line(slide, 485, 357, 530, 357, C.line, 2);
     line(slide, 810, 279, 795, 279, C.line, 2); line(slide, 795, 279, 795, 357, C.line, 2); line(slide, 795, 357, 750, 357, C.line, 2);
     line(slide, 392, 529, 485, 529, C.line, 2); line(slide, 485, 529, 485, 357, C.line, 2);
     line(slide, 810, 529, 795, 529, C.line, 2); line(slide, 795, 529, 795, 357, C.line, 2);
-    addText(slide, "Telemetry never blocks the audio path.", 350, 590, 580, 34, 21, C.navy, { bold: true, align: "center" });
+    addText(slide, spec.caption, 150, 590, 980, 28, 16, C.navy, { fill: "#E8F3F6", radius: 15, bold: true, align: "center" });
+    addText(slide, spec.subcaption, 300, 626, 680, 20, 13, C.muted, { bold: true, align: "center" });
   } else if (spec.kind === "run") {
     spec.data.forEach((d, i) => card(slide, d[0], d[1], 84 + i * 280, 242, 246, 154, i === 0 ? C.teal : C.cyan));
     line(slide, 112, 480, 1120, 480, C.line, 3);
