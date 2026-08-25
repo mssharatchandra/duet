@@ -66,6 +66,7 @@ const specs = [
   { n: 28, title: "Appendix · research map", kind: "research", rows: [["Moshi", "two-stream full-duplex speech"], ["PersonaPlex", "role + voice conditioning"], ["FD-Bench", "293 conversations · 1,200 interruptions"], ["Turn-taking studies", "noise + decoding bias"], ["Duet", "guarded speculation + actions"]], source: "arXiv:2410.00037 · 2507.19040 · 2605.20356" },
   { n: 29, title: "Appendix · metrics that matter", kind: "metricgrid", rows: [["ASR", "WER / CER · accent · SNR · code-mix"], ["TURN", "endpoint · takeover · overlap · barge-stop"], ["REASON", "factuality · policy · task · TTFT"], ["TTS", "TTFB · MOS · intelligibility · glitches"], ["SYSTEM", "E2E p50/p95 · errors · cost/min"], ["BUSINESS", "qualified handoff · advisor time · visits"]], caption: "A production voice eval is layered. Measure recognition by accent and noise, turn-taking by endpoint and overlap, reasoning by factuality and task success, speech by TTFB and preference, and the whole system by tail latency, cost and business outcomes.", source: "Duet evaluation framework" },
   { n: 30, title: "Closing notes", kind: "questions", rows: [["Is this truly full duplex?", "Controlled duplex today; Moshi is the native research lane."], ["Why not one speech-to-speech model?", "Control, actions and deterministic policy still win here."], ["Why not a 20B local LLM?", "Re-test on production GPU against the same gates."], ["Can this call customers tomorrow?", "No—telephony, Do Not Call (DNC), isolation and transfer are P0."], ["What is defensible?", "Interaction state, eval data, workflows and reliability."]], source: "Duet engineering Q&A" },
+  { n: 31, title: "Thank you", kind: "thanks", body: ["MS Sharat Chandra"], source: "Duet · Aira" },
 ];
 
 function addShape(slide, geometry, left, top, width, height, fill = "none", lineFill = "none", lineWidth = 0, radius) {
@@ -165,6 +166,18 @@ function render(spec, slide) {
     addShape(slide, "roundRect", 126, 122, 1028, 516, "#FFF8EA/60", C.cyan, 3, 24);
     addText(slide, "DROP RECORDED DEMO HERE", 300, 318, 680, 64, 34, C.navy, { bold: true, align: "center" });
     addText(slide, "disclosure · grounded answer · interruption · action · decision trace", 280, 390, 720, 40, 16, C.muted, { align: "center" });
+    return;
+  }
+  if (spec.kind === "thanks") {
+    addText(slide, "DUET · AIRA", 78, 78, 360, 28, 14, C.cyan, { bold: true });
+    addText(slide, "Thank you.", 120, 258, 1040, 92, 62, C.navy, { bold: true, align: "center" });
+    addText(slide, spec.body[0], 160, 370, 960, 48, 28, C.coral, { bold: true, align: "center" });
+    line(slide, 180, 540, 1100, 540, C.cyan, 3);
+    for (let i = 0; i < 26; i++) {
+      const x = 180 + i * 36;
+      const amp = 6 + ((i * 13) % 22);
+      line(slide, x, 540 - amp, x, 540 + amp, i > 11 && i < 15 ? C.coral : C.cyan, 2);
+    }
     return;
   }
 
@@ -535,7 +548,7 @@ async function main() {
 
   for (const spec of specs) {
     const slide = deck.slides.add();
-    addBackground(slide, bgBytes[(spec.n - 1) % 4], spec.n, spec.kind !== "hero" && spec.kind !== "demo" && spec.kind !== "closing");
+    addBackground(slide, bgBytes[(spec.n - 1) % 4], spec.n, spec.kind !== "hero" && spec.kind !== "demo" && spec.kind !== "closing" && spec.kind !== "thanks");
     render(spec, slide);
     addFooter(slide, spec.source);
     const noteText = `${notes.get(spec.n) || "Use the visible slide as the discussion prompt."}\n\nSOURCES\n- ${spec.source}\n- Full source notes: docs/talk/FINAL_DECK_2026-08-25.md`;

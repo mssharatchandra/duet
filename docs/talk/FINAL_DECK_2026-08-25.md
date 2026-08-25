@@ -627,6 +627,22 @@ claim.
 - **What is defensible?** Interaction state, eval data, domain workflows, reliability and the feedback loop—not
   commodity access to ASR, LLM or TTS.
 
+---
+
+## Slide 31 — Thank you
+
+**Visible**
+
+Thank you.
+
+MS Sharat Chandra
+
+**Visual**: The closing waveform on a full-bleed Duet background.
+
+**Speaker notes**: Thank the audience and invite questions about the live experiment, the evaluation loop, or the ASBL use case.
+
+**Source**: Duet · Aira.
+
 ## Sources for slide footers
 
 - Moshi: https://arxiv.org/abs/2410.00037
