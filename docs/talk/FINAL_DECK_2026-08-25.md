@@ -578,6 +578,8 @@ Human is not a model.
 
 Human is the behaviour of the whole system.
 
+**Conclusion**: Buy the best primitives. Own interaction state, evidence and the evaluation loop. Keep the research lane alive.
+
 **Visual**: Mountain horizon with a tiny two-channel waveform converging in the centre.
 
 **Speaker notes**: We started by searching for a magical full-duplex model. We ended with a more useful view:
