@@ -61,7 +61,7 @@ const specs = [
   { n: 23, title: "Why India is a voice market", kind: "numbers", data: [["22", "official languages"], ["2M+", "voice conversations/day¹"], ["₹3.50", "per minute¹"], ["$6.3M", "Bolna seed · 2026"]], caption: "The moat is not only a pretty voice: noisy telephony, dialects, interruption, cost, compliance, integrations and reliability at large volumes.", source: "¹Sarvam claims · Bolna funding announcement" },
   { n: 24, title: "ASBL inquiry reactivation and qualification", kind: "funnel", rows: [["AI", "reactivation · permission · intent · FAQs · qualification · follow-up"], ["HUMANS", "trust · nuance · negotiation · closure"]], caption: "At millions of leads, Aira can re-engage and screen every inquiry, routing only high-intent, consented opportunities to advisors.", source: "Proposed ASBL pilot workflow" },
   { n: 25, title: "Prototype → production voice system", kind: "rivets", body: ["session isolation", "telephony", "Do Not Call\n(DNC)", "human transfer", "SLOs", "load tests", "replay", "retention", "incident response"], caption: "A production agent is a reliable call system: every conversation must be safe, observable and recoverable at scale.", source: "Duet production-readiness audit" },
-  { n: 26, title: "A 90-day proof, not a frontier-model lab", kind: "steps", rows: [["01", "English · one project · one workflow"], ["02", "Shadow → internal → consented pilot"], ["03", "Promote only on measured gates"]], source: "Duet 90-day pilot proposal" },
+  { n: 26, title: "The opening: owned call data + multilingual frontier", kind: "steps", rows: [["100s hrs", "Recorded ASBL\nsales calls"], ["LEARN", "Consent-safe data\n→ real-call evals"], ["OPEN", "Multilingual + code-mixed\nreliability is still open"]], caption: "The advantage is the loop: data → evaluations → reliability—before anyone treats multilingual voice as solved.", source: "ASBL call-recording asset · Duet evaluation framework" },
   { n: 27, title: "The lesson", kind: "closing", body: ["Human is not a model.", "Human is the behaviour of the whole system."], source: "Duet experiment conclusion" },
   { n: 28, title: "Appendix · research map", kind: "research", rows: [["Moshi", "two-stream full-duplex speech"], ["PersonaPlex", "role + voice conditioning"], ["FD-Bench", "293 conversations · 1,200 interruptions"], ["Turn-taking studies", "noise + decoding bias"], ["Duet", "guarded speculation + actions"]], source: "arXiv:2410.00037 · 2507.19040 · 2605.20356" },
   { n: 29, title: "Appendix · metrics that matter", kind: "metricgrid", rows: [["ASR", "WER / CER · accent · SNR · code-mix"], ["TURN", "endpoint · takeover · overlap · barge-stop"], ["REASON", "factuality · policy · task · TTFT"], ["TTS", "TTFB · MOS · intelligibility · glitches"], ["SYSTEM", "E2E p50/p95 · errors · cost/min"], ["BUSINESS", "qualified handoff · advisor time · visits"]], source: "Duet evaluation framework" },
@@ -485,10 +485,10 @@ function render(spec, slide) {
       const x = 120 + i * 362;
       const y = 410 - i * 82;
       addShape(slide, "roundRect", x, y, 300, 142, i === 2 ? C.teal : C.cream2, i === 2 ? C.teal : C.cyan, 2, 24);
-      addText(slide, r[0], x + 24, y + 18, 60, 32, 18, i === 2 ? C.cream2 : C.cyan, { mono: true, bold: true });
-      addText(slide, r[1], x + 24, y + 52, 252, 72, 21, i === 2 ? C.cream2 : C.navy, { bold: true, align: "center" });
+      addText(slide, r[0], x + 24, y + 18, 130, 28, 15, i === 2 ? C.cream2 : C.cyan, { mono: true, bold: true });
+      addText(slide, r[1], x + 24, y + 52, 252, 72, 20, i === 2 ? C.cream2 : C.navy, { bold: true, align: "center" });
     });
-    addText(slide, "90 days", 900, 555, 230, 54, 34, C.coral, { mono: true, bold: true, align: "right" });
+    addText(slide, spec.caption, 150, 590, 980, 36, 16, C.navy, { fill: "#E8F3F6", radius: 16, bold: true, align: "center" });
   } else if (spec.kind === "closing") {
     addText(slide, spec.body[0], 120, 224, 1040, 92, 46, C.navy, { bold: true, align: "center" });
     addText(slide, spec.body[1], 160, 340, 960, 122, 38, C.coral, { bold: true, align: "center" });

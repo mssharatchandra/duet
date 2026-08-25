@@ -548,22 +548,25 @@ single-session and browser-first; these are the production capabilities still ne
 
 ---
 
-## Slide 26 — A 90-day proof, not a frontier-model lab
+## Slide 26 — The opening: owned call data + multilingual frontier
 
 **Visible**
 
-1. English, one project, one workflow
+**100s hrs**: recorded ASBL sales calls
 
-2. Shadow → internal → consented pilot
+**Learn**: consent-safe data → real-call evals
 
-3. Promote only on measured gates
+**Open**: multilingual + code-mixed reliability is still open
 
-**Visual**: Three stepping stones across the beach background.
+**Key takeaway**: The advantage is the loop: data → evaluations → reliability—before anyone treats multilingual voice as solved.
 
-**Speaker notes**: Week 1–3: instrument 100 historical, consent-safe scenarios and build the golden set. Week
-4–6: connect real CRM actions and telephony in shadow mode. Week 7–9: small consented English pilot with human
-takeover. Week 10–12: compare agent versus current operation on qualification yield, complaints, factuality,
-latency, tool success and cost. Add Telugu/Hindi/code-mix only after separate speech and trust gates.
+**Visual**: Three strategic stepping stones: owned data → domain learning → open multilingual frontier.
+
+**Speaker notes**: ASBL’s hundreds of hours of historical sales calls are a differentiated learning asset only
+when they are used with appropriate consent, retention, access controls and legal review. They can reveal real
+objections, silence patterns, accents, turn-taking and qualification signals that generic benchmarks miss. The
+opportunity is not to declare multilingual voice solved: Telugu, Hindi, English and code-mixed calls still need
+their own ASR, TTS, factuality, turn-taking and trust evaluations before deployment.
 
 ---
 
