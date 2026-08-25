@@ -54,7 +54,7 @@ const specs = [
   { n: 16, title: "Experiment 1: earlier speculation did not prove speed", kind: "nearbars", data: [["Before", 1943], ["Two-word speculation", 1912]], body: ["Start reasoning after two stable words, rather than wait for four.", "The reply should begin meaningfully sooner.", "31 ms difference across two live runs.", "Too small and too few runs: noise, not a proven speedup."], source: "GitHub PR #1 · Widen speculative-reasoning coverage" },
   { n: 17, title: "Experiment 2: the proxy win inverted", kind: "inversion", body: ["4.9× fewer free-run tokens", "+59% takeovers", "+41% overlap", "8× worse handoff"], caption: "In simple terms: we made the bot wait less; it interrupted people more often.", lesson: "EVAL RULE  ·  Eval the behaviour you care about—not the proxy that flatters your optimization.", source: "GitHub PR #2 · docs/DUPLEX_STEERING.md" },
   { n: 18, title: "Evals are the new PRDs", kind: "loop", body: ["scenario", "metric", "threshold", "regression test"], caption: "Why: live calls reveal failures a prompt cannot. We made each one a repeatable test.", source: "Duet CI and eval harnesses" },
-  { n: 19, title: "The model does not own trust", kind: "guard", body: ["consent", "opt-out", "claims", "staleness", "capabilities"], source: "Duet policy and action adapters" },
+  { n: 19, title: "The model does not own trust", kind: "guard", body: ["consent", "opt-out", "claims", "staleness", "capabilities"], caption: "Why: models can be wrong. They propose; deterministic code verifies consent, facts and permissions before speech or action.", source: "Duet policy and action adapters" },
   { n: 20, title: "If you cannot replay it, you cannot improve it", kind: "observability", body: ["Langfuse", "Prometheus + Grafana", "Postgres", "JSONL / Loki"], source: "Duet observability stack" },
   { n: 21, title: "Latest Aira run: fast, with one measurement bug", kind: "run", data: [["median response start", "443 ms"], ["interruptions", "3"], ["actions", "2"], ["user turns", "11"]], body: ["p95 invalid — unmatched turn at session cutoff"], source: "Session 1787592808-61dd64 · trace 9722afa5…" },
   { n: 22, title: "Aira vs Sarvam Voice Agents: honest comparison", kind: "vendorbars", data: [["Aira local-plan", 443, "measured · one session"], ["Aira Gemini", 2260, "measured · rich response"], ["Sarvam", 500, "vendor claim · definition unpublished"]], source: "Duet traces · Sarvam Voice Agents product page" },
@@ -412,6 +412,7 @@ function render(spec, slide) {
     const pts = [[120, 236], [130, 474], [520, 558], [930, 470], [930, 236]];
     spec.body.forEach((t, i) => pill(slide, t, pts[i][0], pts[i][1], 190, i === 1 ? C.coral : C.cyan));
     addText(slide, "Deterministic code", 487, 244, 306, 36, 15, C.coral, { bold: true, align: "center" });
+    addText(slide, spec.caption, 150, 614, 980, 32, 16, C.navy, { fill: "#E8F3F6", radius: 16, bold: true, align: "center" });
   } else if (spec.kind === "observability") {
     addShape(slide, "ellipse", 530, 282, 220, 150, C.coral, "none", 0);
     addText(slide, "TRACE ID", 558, 315, 164, 84, 25, C.cream2, { mono: true, bold: true, align: "center" });

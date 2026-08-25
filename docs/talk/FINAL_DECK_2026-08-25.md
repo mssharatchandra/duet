@@ -400,6 +400,8 @@ Deterministic code owns:
 
 `consent`  `opt-out`  `claims`  `staleness`  `capabilities`
 
+**Plain-English takeaway**: models can be wrong. They propose; deterministic code verifies consent, facts and permissions before speech or action.
+
 **Visual**: A guardrail surrounding the reasoning model, with tool arrows passing through a capability gate.
 
 **Speaker notes**: The LLM may propose an action. Only an action adapter may report accepted or completed. The
