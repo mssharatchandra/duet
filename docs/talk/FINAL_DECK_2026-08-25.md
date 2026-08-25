@@ -283,21 +283,23 @@ so we added a deterministic fallback. The y-axis is deliberately an evidence sca
 
 **Visible**
 
-| Model | Speed | Result |
+| Model | First-plan latency | Result |
 |---|---:|---|
-| Qwen 0.8B | 153 ms TTFT | fast, invented facts |
+| Qwen 0.8B | 153 ms | fast, invented facts |
 | Qwen 4B | 1,623 ms | relevant, too slow |
 | Gemma 1B | 760–1,750 ms | schema/policy failures |
 | Gemma 4B | 2,858–3,142 ms | grounded, slower than Gemini |
+| **Gemini Flash Lite** | **1,120 ms** | **132/136 grounded-policy checks · chosen** |
 
-**Visual**: Scatter plot: latency rightward, policy pass upward.
+**Visual**: Five-row decision table. Gemini is highlighted as the selected reference line.
 
 **Speaker notes**: Local is attractive for privacy, predictable cost and owned KV caching. But a smaller model
 that violates a financial-claim guard is not a viable sales brain. A larger local model that is slower than the
-API has no latency ROI on this laptop. Re-evaluate on production GPU hardware; do not generalize this Apple M5
-result into “local models are bad.”
+API has no latency ROI on this laptop. Gemini was selected because it combined an observed 1,120 ms plan with
+132/136 grounded-policy checks and structured tool support. Re-evaluate local candidates on production GPU
+hardware; do not generalize this Apple M5 result into “local models are bad.”
 
-**Source**: open PR #1 commits `628b8b8`; repository Decision 0022.
+**Source**: local model measurements; repository Decisions 0021–0022.
 
 ---
 

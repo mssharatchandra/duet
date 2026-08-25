@@ -49,7 +49,7 @@ const specs = [
   { n: 11, title: "The ASR eval changed the answer", kind: "bars", label: "WER at 5 dB noise ↓", data: [["base.en", 14.1], ["small.en", 8.7], ["MLX Whisper", 3.4], ["Parakeet", 2.7]], source: "eval/asr/README.md · 30 utterances × 7 conditions" },
   { n: 12, title: "TTS: optimize the clock people hear", kind: "timeline", label: "Time to first audio", data: [["Piper", 83], ["Sarvam warm", 223], ["Kokoro", 380]], source: "eval/tts/README.md · Decision 0022" },
   { n: 13, title: "Why Gemini won our reasoning gate", kind: "quadrant", body: ["grounded", "structured", "tool-capable", "fast enough"], source: "Gemini 3.1 Flash Lite docs · Decisions 0021–0022" },
-  { n: 14, title: "Local reasoning: the speed–reliability wall", kind: "modeltable", rows: [["Qwen 0.8B", "153 ms", "invented facts"], ["Qwen 4B", "1,623 ms", "relevant, too slow"], ["Gemma 1B", "760–1,750 ms", "schema / policy failures"], ["Gemma 4B", "2,858–3,142 ms", "grounded, slower"]], source: "PR #1 commit 628b8b8 · Decision 0022" },
+  { n: 14, title: "Local reasoning: the speed–reliability wall", kind: "modeltable", rows: [["Qwen 0.8B", "153 ms", "fast, invented facts"], ["Qwen 4B", "1,623 ms", "relevant, too slow"], ["Gemma 1B", "760–1,750 ms", "schema / policy failures"], ["Gemma 4B", "2,858–3,142 ms", "grounded sample, slower than Gemini"], ["Gemini Flash Lite", "1,120 ms", "132/136 grounded-policy checks · chosen"]], source: "Local model measurements · Decisions 0021–0022" },
   { n: 15, title: "Moshi proved speed—and failed control", kind: "compare", rows: [["", "Handoff p50", "Takeover", "Overlap"], ["Moshi duplex", "240 ms", "0.24", "0.234"], ["Cascade", "1,880 ms", "0.00", "0.053"]], source: "Moshi paper · eval/bench/RESULTS.md" },
   { n: 16, title: "Experiment 1: earlier speculation ≠ proven speed", kind: "nearbars", data: [["Before", 1943], ["Two-word speculation", 1912]], body: ["n = 2 live runs", "Result: noise, not a win."], source: "GitHub PR #1 · Widen speculative-reasoning coverage" },
   { n: 17, title: "Experiment 2: the proxy win inverted", kind: "inversion", body: ["4.9× fewer free-run tokens", "+59% takeovers", "+41% overlap", "8× worse handoff"], source: "GitHub PR #2 · docs/DUPLEX_STEERING.md" },
@@ -335,16 +335,18 @@ function render(spec, slide) {
     });
     addText(slide, "Gemini was the only option that paired ~1.1 s planning with a gated grounded-response eval.", 156, 632, 968, 22, 15, C.navy, { bold: true, align: "center" });
   } else if (spec.kind === "modeltable") {
-    const headers = ["MODEL", "TTFT", "OUTCOME"];
+    const headers = ["MODEL", "FIRST-PLAN LATENCY", "OUTCOME"];
     const col = [82, 394, 610, 1200];
     headers.forEach((h, i) => addText(slide, h, col[i] + 14, 212, col[i + 1] - col[i] - 28, 36, 12, C.cyan, { bold: true }));
     spec.rows.forEach((r, i) => {
-      const y = 256 + i * 82;
-      addShape(slide, "roundRect", 82, y, 1118, 64, i === 3 ? "#DDEEEA" : C.cream2, C.line, 1, 14);
-      addText(slide, r[0], 100, y, 276, 64, 18, C.navy, { bold: true });
-      addText(slide, r[1], 408, y, 180, 64, 17, C.navy, { mono: true, bold: true });
-      addText(slide, r[2], 625, y, 550, 64, 18, i === 0 || i === 2 ? C.coral : C.navy, { bold: i === 0 || i === 2 });
+      const y = 246 + i * 70;
+      const chosen = i === spec.rows.length - 1;
+      addShape(slide, "roundRect", 82, y, 1118, 58, chosen ? "#DDEEEA" : C.cream2, chosen ? C.teal : C.line, chosen ? 2 : 1, 14);
+      addText(slide, r[0], 100, y, 276, 58, 16, chosen ? C.teal : C.navy, { bold: true });
+      addText(slide, r[1], 408, y, 180, 58, 15, chosen ? C.teal : C.navy, { mono: true, bold: true });
+      addText(slide, r[2], 625, y, 550, 58, 16, chosen ? C.teal : (i === 0 || i === 2 ? C.coral : C.navy), { bold: chosen || i === 0 || i === 2 });
     });
+    addText(slide, "Chosen: ~1.1 s planning + 132/136 grounded-policy checks.", 150, 616, 980, 26, 16, C.teal, { bold: true, align: "center" });
   } else if (spec.kind === "compare") {
     const x = [92, 390, 658, 876, 1105];
     spec.rows.forEach((r, ri) => {
