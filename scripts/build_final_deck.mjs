@@ -58,7 +58,7 @@ const specs = [
   { n: 20, title: "If you cannot replay it, you cannot improve it", kind: "observability", body: [["01", "Langfuse", "Why: replay model + tool decisions."], ["02", "Prometheus + Grafana", "Why: spot latency + error regressions."], ["03", "Postgres", "Why: join turns, actions + outcomes."], ["04", "JSONL / Loki", "Why: diagnose event-level failures."]], caption: "Observability closes the loop: real failures become better eval cases before the next release.", subcaption: "Asynchronous telemetry—never on the audio path.", source: "Duet observability stack" },
   { n: 21, title: "Latest Aira run: a replayable live session", kind: "run", data: [["median response start", "443 ms"], ["interruptions", "3"], ["actions", "2"], ["user turns", "11"]], body: ["One trace connects responsiveness, interruptions, actions and the caller’s journey."], source: "Session 1787592808-61dd64 · trace 9722afa5…" },
   { n: 22, title: "Aira vs Sarvam Voice Agents: honest comparison", kind: "vendorbars", data: [["Aira local-plan", 443, "measured · one session"], ["Aira Gemini", 2260, "measured · rich response"], ["Sarvam", 500, "vendor claim · definition unpublished"]], source: "Duet traces · Sarvam Voice Agents product page" },
-  { n: 23, title: "Why India is a voice market", kind: "numbers", data: [["22", "official languages"], ["2M+", "voice conversations/day¹"], ["₹3.50", "per minute¹"], ["$6.3M", "Bolna seed · 2026"]], source: "¹Sarvam claims · Bolna funding announcement" },
+  { n: 23, title: "Why India is a voice market", kind: "numbers", data: [["22", "official languages"], ["2M+", "voice conversations/day¹"], ["₹3.50", "per minute¹"], ["$6.3M", "Bolna seed · 2026"]], caption: "The moat is not only a pretty voice: noisy telephony, dialects, interruption, cost, compliance, integrations and reliability at large volumes.", source: "¹Sarvam claims · Bolna funding announcement" },
   { n: 24, title: "The wedge: remove junk work, not humans", kind: "funnel", rows: [["AI", "permission · intent · FAQs · qualification · follow-up"], ["HUMANS", "trust · nuance · negotiation · closure"]], source: "Proposed ASBL pilot workflow" },
   { n: 25, title: "Prototype → production voice system", kind: "rivets", body: ["session isolation", "telephony", "DNC", "human transfer", "SLOs", "load tests", "replay", "retention", "incident response"], source: "Duet production-readiness audit" },
   { n: 26, title: "A 90-day proof, not a frontier-model lab", kind: "steps", rows: [["01", "English · one project · one workflow"], ["02", "Shadow → internal → consented pilot"], ["03", "Promote only on measured gates"]], source: "Duet 90-day pilot proposal" },
@@ -458,7 +458,7 @@ function render(spec, slide) {
       addText(slide, d[1], x + 220, y + 6, 310, 72, 20, C.navy, { bold: true });
       line(slide, x, y + 112, x + 500, y + 112, C.line, 1);
     });
-    addText(slide, "Signals—not a top-down TAM proof.", 330, 610, 620, 32, 18, C.coral, { bold: true, align: "center" });
+    addText(slide, spec.caption, 125, 592, 1030, 46, 15, C.navy, { fill: "#E8F3F6", radius: 16, bold: true, align: "center" });
   } else if (spec.kind === "funnel") {
     const widths = [900, 680, 460, 250];
     const ys = [218, 300, 382, 464];

@@ -489,6 +489,8 @@ speech-end-to-audible-audio p50/p95, takeover, task success, factuality, human p
 
 `$6.3M seed` — Bolna, 2026
 
+**Key takeaway**: The moat is not only a pretty voice: noisy telephony, dialects, interruption, cost, compliance, integrations and reliability at large volumes.
+
 **Visual**: Four large numerals over the cloud background.
 
 **Speaker notes**: India is voice-first, multilingual, code-mixed, mobile and operationally call-heavy. The
