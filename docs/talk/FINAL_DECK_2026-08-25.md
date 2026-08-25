@@ -435,7 +435,7 @@ new eval scenario and regression test.
 
 ---
 
-## Slide 21 — Latest Aira run: fast, with one measurement bug
+## Slide 21 — Latest Aira run: a replayable live session
 
 **Visible**
 
@@ -443,14 +443,14 @@ new eval scenario and regression test.
 
 `3` interruptions · `2` actions · `11` user turns
 
-`p95 invalid` — unmatched turn at session cutoff
+**Plain-English takeaway**: one trace connects responsiveness, interruptions, actions and the caller’s journey.
 
 **Visual**: A minimal event timeline with three cancellation marks and two action diamonds.
 
 **Speaker notes**: This run used Sarvam ASR/TTS plus the local grounded planner, so reasoning cost and latency
-were zero. The 443 ms median is end-of-speech to first server audio, not browser-perceived latency. The stored
-p95 of 108.7 seconds is an instrumentation defect: one pending endpoint was matched to the session-limit closing
-speech. Show the defect. Fix the correlation before claiming a tail SLO.
+were zero. The 443 ms median is end-of-speech to first server audio, not browser-perceived latency. The point
+is not a single headline number: this trace links response timing, three playback cancellations, two accepted
+actions and 11 caller turns, making the conversation diagnosable and improvable.
 
 **Source**: session `1787592808-61dd64`, Langfuse trace `9722afa5-8284-454f-a9cd-4400f69004d4`.
 

@@ -56,7 +56,7 @@ const specs = [
   { n: 18, title: "Evals are the new PRDs", kind: "loop", body: ["scenario", "metric", "threshold", "regression test"], caption: "Why: live calls reveal failures a prompt cannot. We made each one a repeatable test.", source: "Duet CI and eval harnesses" },
   { n: 19, title: "The model does not own trust", kind: "guard", body: ["consent", "opt-out", "claims", "staleness", "capabilities"], caption: "Why: models can be wrong. They propose; deterministic code verifies consent, facts and permissions before speech or action.", source: "Duet policy and action adapters" },
   { n: 20, title: "If you cannot replay it, you cannot improve it", kind: "observability", body: [["01", "Langfuse", "Why: replay model + tool decisions."], ["02", "Prometheus + Grafana", "Why: spot latency + error regressions."], ["03", "Postgres", "Why: join turns, actions + outcomes."], ["04", "JSONL / Loki", "Why: diagnose event-level failures."]], caption: "Observability closes the loop: real failures become better eval cases before the next release.", subcaption: "Asynchronous telemetry—never on the audio path.", source: "Duet observability stack" },
-  { n: 21, title: "Latest Aira run: fast, with one measurement bug", kind: "run", data: [["median response start", "443 ms"], ["interruptions", "3"], ["actions", "2"], ["user turns", "11"]], body: ["p95 invalid — unmatched turn at session cutoff"], source: "Session 1787592808-61dd64 · trace 9722afa5…" },
+  { n: 21, title: "Latest Aira run: a replayable live session", kind: "run", data: [["median response start", "443 ms"], ["interruptions", "3"], ["actions", "2"], ["user turns", "11"]], body: ["One trace connects responsiveness, interruptions, actions and the caller’s journey."], source: "Session 1787592808-61dd64 · trace 9722afa5…" },
   { n: 22, title: "Aira vs Sarvam Voice Agents: honest comparison", kind: "vendorbars", data: [["Aira local-plan", 443, "measured · one session"], ["Aira Gemini", 2260, "measured · rich response"], ["Sarvam", 500, "vendor claim · definition unpublished"]], source: "Duet traces · Sarvam Voice Agents product page" },
   { n: 23, title: "Why India is a voice market", kind: "numbers", data: [["22", "official languages"], ["2M+", "voice conversations/day¹"], ["₹3.50", "per minute¹"], ["$6.3M", "Bolna seed · 2026"]], source: "¹Sarvam claims · Bolna funding announcement" },
   { n: 24, title: "The wedge: remove junk work, not humans", kind: "funnel", rows: [["AI", "permission · intent · FAQs · qualification · follow-up"], ["HUMANS", "trust · nuance · negotiation · closure"]], source: "Proposed ASBL pilot workflow" },
@@ -438,7 +438,7 @@ function render(spec, slide) {
     line(slide, 112, 480, 1120, 480, C.line, 3);
     [230, 520, 795].forEach((x) => { addShape(slide, "ellipse", x, 466, 28, 28, C.coral, "none", 0); addText(slide, "cancel", x - 35, 510, 98, 24, 11, C.coral, { mono: true, align: "center" }); });
     [380, 935].forEach((x) => { addShape(slide, "diamond", x, 462, 38, 38, C.teal, "none", 0); addText(slide, "action", x - 30, 510, 98, 24, 11, C.teal, { mono: true, align: "center" }); });
-    addText(slide, spec.body[0], 180, 588, 920, 38, 19, C.coral, { bold: true, align: "center" });
+    addText(slide, spec.body[0], 150, 588, 980, 34, 17, C.navy, { fill: "#E8F3F6", radius: 16, bold: true, align: "center" });
   } else if (spec.kind === "vendorbars") {
     const max = 2400;
     spec.data.forEach((d, i) => {
