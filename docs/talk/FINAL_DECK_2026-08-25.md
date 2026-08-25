@@ -503,24 +503,28 @@ top-down TAM proof. Use in-house economics to validate the wedge.
 
 ---
 
-## Slide 24 — The wedge: remove junk work, not humans
+## Slide 24 — ASBL inquiry reactivation and qualification
 
 **Visible**
 
 AI handles:
 
-permission · intent · FAQs · qualification · follow-up
+reactivation · permission · intent · FAQs · qualification · follow-up
 
 Humans handle:
 
 trust · nuance · negotiation · closure
+
+**At scale**: At millions of leads, Aira can re-engage and screen every inquiry, routing only high-intent, consented opportunities to advisors.
 
 **Visual**: A lead funnel with “agent” at the wide top and “advisor” at the qualified bottom.
 
 **Speaker notes**: Start with ASBL inquiry reactivation and qualification. Aira can disclose itself, ask whether
 the caller wants a family home or investment, answer verified Broadway questions, collect timing and broad
 budget, and request a brochure, callback or site visit. Success is not calls automated. It is advisor hours
-saved, contact rate, qualified handoffs, factuality, opt-out compliance and incremental site visits.
+saved, contact rate, qualified handoffs, factuality, opt-out compliance and incremental site visits. If the
+workflow scales to millions of historical inquiries, the agent creates coverage and triage—not a replacement for
+the human conversation where trust and negotiation matter.
 
 ---
 
