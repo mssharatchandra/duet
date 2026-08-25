@@ -48,7 +48,8 @@ Listen · decide · speak · yield · remember · act
 
 All at once.
 
-**Visual**: Six small orbiting nodes around “conversation state.”
+**Visual**: A disciplined control-loop diagram: one shared conversation-state band, then Listen → Decide → Speak,
+with Remember, Yield and Act visibly running beside every turn.
 
 **Speaker notes**: A voice agent is not “an LLM with a microphone.” It is a timing-sensitive distributed
 system. It must continuously ingest audio, estimate who owns the floor, maintain state, retrieve facts, decide

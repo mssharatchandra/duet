@@ -171,15 +171,35 @@ function render(spec, slide) {
   addHeader(slide, spec);
 
   if (spec.kind === "orbit") {
-    addShape(slide, "ellipse", 488, 276, 304, 218, C.cream2, C.cyan, 3);
-    addText(slide, "conversation\nstate", 530, 326, 220, 100, 28, C.navy, { bold: true, align: "center" });
-    const pts = [[165, 225], [460, 205], [840, 225], [930, 430], [520, 520], [140, 445]];
-    spec.body.forEach((t, i) => {
-      const [x, y] = pts[i];
-      addShape(slide, "ellipse", x, y, 156, 68, i === 3 ? C.coral : C.pale, i === 3 ? C.coral : C.cyan, 2);
-      addText(slide, t, x, y, 156, 68, 19, C.navy, { bold: true, align: "center" });
+    addText(slide, "ONE SHARED STATE", 78, 206, 220, 24, 11, C.coral, { bold: true });
+    addShape(slide, "roundRect", 78, 232, 1124, 66, C.pale, C.line, 1, 18);
+    addText(slide, "conversation state", 106, 243, 250, 28, 20, C.navy, { bold: true });
+    addText(slide, "who owns the floor  ·  current intent  ·  cancellation version", 394, 243, 720, 28, 16, C.muted, { align: "right" });
+    const stages = [
+      { num: "01", title: "Listen", body: "capture speech\nand ownership", x: 78, color: C.cyan },
+      { num: "02", title: "Decide", body: "facts · policy\nand planning", x: 444, color: C.coral },
+      { num: "03", title: "Speak", body: "stream voice\nand stay cancellable", x: 810, color: C.teal },
+    ];
+    stages.forEach((stage) => {
+      addShape(slide, "roundRect", stage.x, 332, 314, 124, C.cream2, C.line, 1.2, 18);
+      addText(slide, stage.num, stage.x + 20, 352, 46, 18, 11, stage.color, { bold: true });
+      addText(slide, stage.title, stage.x + 20, 374, 150, 30, 22, C.navy, { bold: true });
+      addText(slide, stage.body, stage.x + 20, 407, 250, 34, 15, C.muted);
     });
-    addText(slide, "All at once.", 887, 562, 250, 42, 24, C.coral, { bold: true, align: "right" });
+    addText(slide, "→", 396, 369, 32, 42, 28, C.coral, { bold: true, align: "center" });
+    addText(slide, "→", 762, 369, 32, 42, 28, C.coral, { bold: true, align: "center" });
+    addText(slide, "CONTINUOUS CAPABILITIES", 78, 492, 270, 24, 11, C.cyan, { bold: true });
+    addText(slide, "They run beside the turn—not after it.", 718, 492, 484, 24, 14, C.muted, { align: "right" });
+    const capabilities = [
+      { title: "Remember", body: "retain useful context", x: 78, color: C.cyan },
+      { title: "Yield", body: "give the caller the floor", x: 444, color: C.coral },
+      { title: "Act", body: "request safe next steps", x: 810, color: C.teal },
+    ];
+    capabilities.forEach((capability) => {
+      addShape(slide, "roundRect", capability.x, 524, 314, 62, "#FFFFFF/55", C.line, 1, 16);
+      addText(slide, capability.title, capability.x + 20, 534, 106, 22, 17, capability.color, { bold: true });
+      addText(slide, capability.body, capability.x + 128, 534, 164, 22, 14, C.muted, { align: "right" });
+    });
   } else if (spec.kind === "glossary") {
     spec.rows.forEach((r, i) => {
       const y = 204 + i * 58;
