@@ -107,7 +107,8 @@ The latency budget has four owners:
 
 `turn timing`  `reasoning`  `speech start`  `playout`
 
-**Visual**: Four equal columns. Underneath: “p50 without p95 is a demo, not an SLO.”
+**Visual**: Four latency owners with the handoff each must wait for. Beneath them, the actual safety-boundary
+chain: caller finished → meaning stable → safe first clause → playable audio.
 
 **Speaker notes**: Optimize the user-perceived interval: end of caller intent to audible first agent audio.
 Measure p50 and p95. Then pair latency with wrong-start rate, takeover rate, factuality and task success. A fast

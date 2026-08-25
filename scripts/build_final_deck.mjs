@@ -224,7 +224,17 @@ function render(spec, slide) {
     addText(slide, "Measured rich-response median: 2,715 ms", 300, 510, 680, 44, 20, C.navy, { bold: true, align: "center" });
   } else if (spec.kind === "owners") {
     spec.body.forEach((t, i) => card(slide, `${String(i + 1).padStart(2, "0")}`, t, 82 + i * 286, 238, 248, 178, i === 1 ? C.coral : C.cyan));
-    addText(slide, "p50 without p95 is a demo, not an SLO.", 160, 482, 960, 64, 32, C.navy, { bold: true, align: "center" });
+    const failureModes = ["wait for enough\nsilence to hand off", "wait for stable intent\nand verified facts", "wait for a safe\nfirst clause", "wait for transport\nand device buffer"];
+    failureModes.forEach((mode, i) => addText(slide, mode, 106 + i * 286, 336, 190, 44, 15, C.muted));
+    addText(slide, "FAST MODELS LOSE AT THE HANDOFF", 160, 478, 960, 22, 11, C.coral, { bold: true, align: "center" });
+    addText(slide, "Each component can be fast in isolation. The conversation waits until the next decision is safe to commit.", 150, 505, 980, 34, 20, C.navy, { bold: true, align: "center" });
+    const boundaries = ["caller finished", "meaning stable", "safe first clause", "playable audio"];
+    boundaries.forEach((label, i) => {
+      const x = 166 + i * 246;
+      addText(slide, label, x, 553, 188, 34, 14, C.navy, { fill: C.cream2, line: C.line, lineWidth: 1, radius: 15, bold: true, align: "center" });
+      if (i < boundaries.length - 1) addText(slide, "→", x + 196, 550, 34, 40, 23, C.coral, { bold: true, align: "center" });
+    });
+    addText(slide, "The delay is in the boundary between engines—not only inside the engine.", 140, 598, 1000, 24, 15, C.muted, { align: "center" });
   } else if (spec.kind === "speculation") {
     addText(slide, "partial transcript", 90, 242, 210, 48, 18, C.navy, { fill: C.pale, radius: 18, bold: true, align: "center" });
     line(slide, 300, 266, 445, 266, C.line, 3);
