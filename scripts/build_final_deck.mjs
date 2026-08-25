@@ -38,7 +38,7 @@ const MONO = "Aptos Mono";
 const specs = [
   { n: 1, title: "Humanising Voice AI", kind: "hero", body: ["Duet / Aira", "A month of building, breaking and measuring a real-time voice agent."], source: "Duet repository experiments, August 2026" },
   { n: 2, title: "A voice agent is a real-time control system", kind: "orbit", body: ["Listen", "decide", "speak", "yield", "remember", "act"], source: "Duet architecture" },
-  { n: 3, title: "Demystifying the jargon", kind: "glossary", rows: [["VAD", "Is someone speaking?"], ["ASR / STT", "What did they say?"], ["EOU / endpoint", "Are they finished?"], ["LLM TTFT", "First thinking token"], ["TTS TTFB", "First playable audio"], ["Barge-in", "Caller takes the floor"], ["RTF", "Inference keeps up with real time"]], source: "Duet learning guide" },
+  { n: 3, title: "Demystifying the jargon", kind: "glossary", rows: [["VAD", "Voice Activity Detection", "Is someone speaking?"], ["ASR / STT", "Automatic Speech Recognition / Speech-to-Text", "What did they say?"], ["EOU", "End of Utterance / endpointing", "Are they finished?"], ["LLM TTFT", "Large-language-model time to first token", "When does thinking begin?"], ["TTS TTFB", "Text-to-speech time to first byte", "When can speech begin?"], ["Barge-in", "Interruption detection and recovery", "Can the caller take the floor?"], ["RTF", "Real-time factor", "Can inference keep up with speech?"]], source: "Duet learning guide" },
   { n: 4, title: "The waterfall tax", kind: "waterfall", body: ["speech end", "endpoint", "ASR", "reasoning", "TTS", "playback"], source: "Decision 0021 · docs/LATENCY_ARCHITECTURE.md" },
   { n: 5, title: "Fast models do not guarantee a fast conversation", kind: "owners", body: ["turn timing", "reasoning", "speech start", "playout"], source: "Duet latency architecture" },
   { n: 6, title: "Duet’s thesis: guarded speculative duplex", kind: "speculation", body: ["Start safe work early.", "Commit only when meaning is stable.", "Cancel everything stale."], source: "Duet architecture; concurrency is prior art" },
@@ -201,10 +201,14 @@ function render(spec, slide) {
       addText(slide, capability.body, capability.x + 128, 534, 164, 22, 14, C.muted, { align: "right" });
     });
   } else if (spec.kind === "glossary") {
+    addText(slide, "TERM", 92, 198, 186, 18, 10, C.cyan, { bold: true });
+    addText(slide, "WHAT IT LITERALLY MEANS", 304, 198, 300, 18, 10, C.cyan, { bold: true });
+    addText(slide, "IN A CONVERSATION", 636, 198, 444, 18, 10, C.cyan, { bold: true });
     spec.rows.forEach((r, i) => {
-      const y = 204 + i * 58;
-      addText(slide, r[0], 92, y, 210, 42, 16, C.cream2, { fill: i % 2 ? C.teal : C.cyan, radius: 16, bold: true, align: "center" });
-      addText(slide, r[1], 330, y, 750, 42, 21, C.navy, { fill: C.cream2, line: C.line, lineWidth: 1, radius: 14, insets: { left: 18, right: 12, top: 0, bottom: 0 } });
+      const y = 222 + i * 52;
+      addText(slide, r[0], 92, y, 186, 40, 14, C.cream2, { fill: i % 2 ? C.teal : C.cyan, radius: 15, bold: true, align: "center" });
+      addText(slide, r[1], 304, y, 300, 40, 14, C.navy, { fill: "#FFFFFF/60", line: C.line, lineWidth: 1, radius: 14, insets: { left: 14, right: 10, top: 0, bottom: 0 } });
+      addText(slide, r[2], 636, y, 444, 40, 17, C.navy, { fill: C.cream2, line: C.line, lineWidth: 1, radius: 14, insets: { left: 18, right: 10, top: 0, bottom: 0 } });
     });
   } else if (spec.kind === "waterfall") {
     const widths = [130, 130, 130, 255, 140, 145];

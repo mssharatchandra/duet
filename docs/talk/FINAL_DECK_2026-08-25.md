@@ -62,17 +62,17 @@ voice setting.
 
 **Visible**
 
-| Term | Plain meaning |
-|---|---|
-| VAD | Is someone speaking? |
-| ASR / STT | What did they say? |
-| EOU / endpoint | Are they finished? |
-| LLM TTFT | When does thinking produce its first token? |
-| TTS TTFB | When does speech produce its first audio? |
-| Barge-in | Can the caller take the floor back? |
-| RTF | Can inference keep up with real time? |
+| Term | What it literally means | In a conversation |
+|---|---|---|
+| VAD | Voice Activity Detection | Is someone speaking? |
+| ASR / STT | Automatic Speech Recognition / Speech-to-Text | What did they say? |
+| EOU | End of Utterance / endpointing | Are they finished? |
+| LLM TTFT | Large-language-model time to first token | When does thinking begin? |
+| TTS TTFB | Text-to-speech time to first byte | When can speech begin? |
+| Barge-in | Interruption detection and recovery | Can the caller take the floor? |
+| RTF | Real-time factor | Can inference keep up with speech? |
 
-**Visual**: Typeset glossary as seven horizontal “signal labels.”
+**Visual**: A three-column glossary: acronym, literal technical meaning, then the plain-English question it answers.
 
 **Speaker notes**: Clarify three easily confused latency clocks. ASR model processing is not the same as
 endpointing delay. LLM time-to-first-token is not total response completion. TTS time-to-first-byte is not
