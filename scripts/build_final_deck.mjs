@@ -36,7 +36,7 @@ const FONT = "Aptos";
 const MONO = "Aptos Mono";
 
 const specs = [
-  { n: 1, title: "Can an AI sales agent actually listen?", kind: "hero", body: ["Duet / Aira", "A month of building, breaking and measuring a real-time voice agent."], source: "Duet repository experiments, August 2026" },
+  { n: 1, title: "Humanising Voice AI", kind: "hero", body: ["Duet / Aira", "A month of building, breaking and measuring a real-time voice agent."], source: "Duet repository experiments, August 2026" },
   { n: 2, title: "Live demo", kind: "demo", body: ["LIVE"], source: "Recorded Aira session" },
   { n: 3, title: "A voice agent is a real-time control system", kind: "orbit", body: ["Listen", "decide", "speak", "yield", "remember", "act"], source: "Duet architecture" },
   { n: 4, title: "The 80/20 glossary", kind: "glossary", rows: [["VAD", "Is someone speaking?"], ["ASR / STT", "What did they say?"], ["EOU / endpoint", "Are they finished?"], ["LLM TTFT", "First thinking token"], ["TTS TTFB", "First playable audio"], ["Barge-in", "Caller takes the floor"], ["RTF", "Inference keeps up with real time"]], source: "Duet learning guide" },

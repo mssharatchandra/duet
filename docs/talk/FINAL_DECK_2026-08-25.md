@@ -1,4 +1,4 @@
-# Can an AI sales agent actually listen?
+# Humanising Voice AI
 
 Final presentation source for the 25 August 2026 engineering talk. The visible slides are intentionally
 minimal; the notes carry the technical depth. Claims labelled “measured” come from this repository.
@@ -22,7 +22,7 @@ business wedge and a production programme, not a claim that the prototype is fin
 
 ---
 
-## Slide 1 — Can an AI sales agent actually listen?
+## Slide 1 — Humanising Voice AI
 
 **Visible**
 
@@ -32,7 +32,8 @@ Duet / Aira
 
 **Visual**: Full-bleed mountain background. Small waveform crossing the horizon.
 
-**Speaker notes**: Start with the question, not the architecture. We tried to build an empathetic ASBL
+**Speaker notes**: Start with the human experience, not the architecture. Ask: can an AI sales agent actually
+listen? We tried to build an empathetic ASBL
 Broadway sales concierge that could understand an Indian caller, answer from verified facts, take actions,
 and stop when interrupted. The important artifact is not a perfect bot. It is the evidence about what makes
 voice systems feel human—and what makes them fail.
