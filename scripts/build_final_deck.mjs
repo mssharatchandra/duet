@@ -64,7 +64,7 @@ const specs = [
   { n: 26, title: "The opening: owned call data + multilingual frontier", kind: "steps", rows: [["100s hrs", "Recorded ASBL\nsales calls"], ["LEARN", "Consent-safe data\n→ real-call evals"], ["OPEN", "Multilingual + code-mixed\nreliability is still open"]], caption: "The advantage is the loop: data → evaluations → reliability—before anyone treats multilingual voice as solved.", source: "ASBL call-recording asset · Duet evaluation framework" },
   { n: 27, title: "The lesson", kind: "closing", body: ["Human is not a model.", "Human is the behaviour of the whole system."], caption: "Buy the best primitives. Own interaction state, evidence and the evaluation loop. Keep the research lane alive.", source: "Duet experiment conclusion" },
   { n: 28, title: "Appendix · research map", kind: "research", rows: [["Moshi", "two-stream full-duplex speech"], ["PersonaPlex", "role + voice conditioning"], ["FD-Bench", "293 conversations · 1,200 interruptions"], ["Turn-taking studies", "noise + decoding bias"], ["Duet", "guarded speculation + actions"]], source: "arXiv:2410.00037 · 2507.19040 · 2605.20356" },
-  { n: 29, title: "Appendix · metrics that matter", kind: "metricgrid", rows: [["ASR", "WER / CER · accent · SNR · code-mix"], ["TURN", "endpoint · takeover · overlap · barge-stop"], ["REASON", "factuality · policy · task · TTFT"], ["TTS", "TTFB · MOS · intelligibility · glitches"], ["SYSTEM", "E2E p50/p95 · errors · cost/min"], ["BUSINESS", "qualified handoff · advisor time · visits"]], source: "Duet evaluation framework" },
+  { n: 29, title: "Appendix · metrics that matter", kind: "metricgrid", rows: [["ASR", "WER / CER · accent · SNR · code-mix"], ["TURN", "endpoint · takeover · overlap · barge-stop"], ["REASON", "factuality · policy · task · TTFT"], ["TTS", "TTFB · MOS · intelligibility · glitches"], ["SYSTEM", "E2E p50/p95 · errors · cost/min"], ["BUSINESS", "qualified handoff · advisor time · visits"]], caption: "A production voice eval is layered. Measure recognition by accent and noise, turn-taking by endpoint and overlap, reasoning by factuality and task success, speech by TTFB and preference, and the whole system by tail latency, cost and business outcomes.", source: "Duet evaluation framework" },
   { n: 30, title: "Appendix · questions to expect", kind: "questions", rows: [["Is this truly full duplex?", "Controlled duplex today; Moshi is the native research lane."], ["Why not one speech-to-speech model?", "Control, actions and deterministic policy still win here."], ["Why not a 20B local LLM?", "Re-test on production GPU against the same gates."], ["Can this call customers tomorrow?", "No—telephony, Do Not Call (DNC), isolation and transfer are P0."], ["What is defensible?", "Interaction state, eval data, workflows and reliability."]], source: "Duet engineering Q&A" },
 ];
 
@@ -512,6 +512,7 @@ function render(spec, slide) {
       const y = 214 + Math.floor(i / 2) * 132;
       card(slide, r[0], r[1], x, y, 520, 104, i === 3 ? C.teal : C.cyan);
     });
+    addText(slide, spec.caption, 110, 602, 1060, 42, 14, C.navy, { fill: "#E8F3F6", radius: 15, bold: true, align: "center" });
   } else if (spec.kind === "questions") {
     spec.rows.forEach((r, i) => {
       const y = 202 + i * 86;
