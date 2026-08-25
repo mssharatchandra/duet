@@ -255,21 +255,27 @@ path and sounded more appropriate for Indian-English conversation.
 
 **Visible**
 
-Not “the best LLM.”
+Not “the best LLM.” The best measured trade-off in this experiment.
 
-The best measured trade-off in this experiment:
+| Model | First-plan latency | Evidence level |
+|---|---:|---:|
+| Qwen 0.8B | 153 ms | 0 — fabricated facts |
+| Gemma 1B | 760–1,750 ms | 0 — schema/policy failures |
+| Qwen 4B | 1,623 ms | 1 — relevant, ungated |
+| Gemma 4B | 2,858–3,142 ms | 2 — grounded sample |
+| Gemini Flash Lite | 1,120 ms | 3 — 132/136 checks |
 
-`grounded`  `structured`  `tool-capable`  `fast enough`
-
-**Visual**: A quality/latency quadrant; Gemini in the viable top-left zone.
+**Visual**: Scatter plot with first-plan latency (0–3,200 ms) on the x-axis and the grounding/policy evidence
+we actually collected (0–3) on the y-axis. It is explicitly not a universal model-quality benchmark.
 
 **Speaker notes**: Use precise language. Gemini 3.1 Flash Lite is designed for low-latency, high-frequency
 workflows and supports structured outputs and function calling. In our 17-scenario reasoning eval the richer
 path reached 97.1% checks. It remained the largest latency component and its free-tier quota broke a recording,
-so we added a deterministic fallback. “Best” here means among the models and policy traps we measured, not a
-universal frontier ranking.
+so we added a deterministic fallback. The y-axis is deliberately an evidence scale—not a fabricated quality score:
+0 means a known control failure, 1 relevant but not gated, 2 a grounded sample, and 3 the 17-scenario eval.
+“Best” here means among the models and policy traps we measured, not a universal frontier ranking.
 
-**Source**: Google Gemini 3.1 Flash Lite docs; repository Decisions 0021–0022.
+**Source**: Google Gemini 3.1 Flash Lite docs; repository Decisions 0021–0022 and local model measurements.
 
 ---
 

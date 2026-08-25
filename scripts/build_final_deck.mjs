@@ -295,14 +295,45 @@ function render(spec, slide) {
     });
     addText(slide, "Fast speech start ≠ human voice quality", 250, 540, 780, 50, 28, C.coral, { bold: true, align: "center" });
   } else if (spec.kind === "quadrant") {
-    line(slide, 210, 555, 1090, 555, C.navy, 2);
-    line(slide, 210, 555, 210, 230, C.navy, 2);
-    addText(slide, "slower →", 935, 576, 150, 24, 12, C.muted, { mono: true, align: "right" });
-    addText(slide, "more reliable ↑", 78, 220, 120, 40, 12, C.muted, { mono: true });
-    addShape(slide, "ellipse", 438, 290, 210, 150, C.teal, C.teal, 0);
-    addText(slide, "Gemini\nviable zone", 453, 314, 180, 100, 25, C.cream2, { bold: true, align: "center" });
-    spec.body.forEach((t, i) => pill(slide, t, 765 + (i % 2) * 165, 278 + Math.floor(i / 2) * 80, 145, i === 3 ? C.coral : C.cyan));
-    addText(slide, "Best measured trade-off in this experiment—not a universal ranking.", 250, 618, 780, 34, 16, C.navy, { bold: true, align: "center" });
+    addText(slide, "MEASURED ON OUR APPLE M5 · NOT A UNIVERSAL MODEL RANKING", 78, 202, 720, 22, 11, C.coral, { bold: true });
+    addText(slide, "Evidence level: 0 failed control  ·  1 relevant but ungated  ·  2 grounded sample  ·  3 132/136 checks", 78, 228, 1100, 24, 14, C.muted);
+    const left = 250;
+    const right = 1130;
+    const top = 310;
+    const bottom = 570;
+    const yFor = (level) => bottom - level * (bottom - top) / 3;
+    const xFor = (ms) => left + ms * (right - left) / 3200;
+    for (let level = 0; level <= 3; level += 1) {
+      const y = yFor(level);
+      line(slide, left, y, right, y, level === 0 ? C.navy : C.line, level === 0 ? 2 : 1);
+      addText(slide, String(level), 184, y - 12, 32, 24, 13, C.navy, { mono: true, bold: true, align: "right" });
+    }
+    line(slide, left, top, left, bottom, C.navy, 2);
+    addText(slide, "GROUNDING / POLICY\nEVIDENCE", 78, 300, 142, 28, 10, C.cyan, { bold: true });
+    addText(slide, "0  known failure", 78, 550, 140, 18, 11, C.muted);
+    addText(slide, "3  evaluated gate", 78, 316, 140, 18, 11, C.muted);
+    [0, 800, 1600, 2400, 3200].forEach((ms) => {
+      const x = xFor(ms);
+      line(slide, x, bottom, x, bottom + 8, C.navy, 1);
+      addText(slide, `${ms.toLocaleString()} ms`, x - 44, 582, 88, 20, 11, C.muted, { mono: true, align: "center" });
+    });
+    addText(slide, "FIRST-PLAN LATENCY →", 778, 608, 352, 22, 11, C.cyan, { bold: true, align: "right" });
+    const points = [
+      { name: "Qwen 0.8B", detail: "153 ms · fabricated facts", ms: 153, level: 0, color: C.coral, dx: 10, dy: -42, w: 195 },
+      { name: "Gemma 1B", detail: "760–1,750 ms · schema/policy fails", ms: 1255, level: 0, color: C.coral, dx: -154, dy: -70, w: 260 },
+      { name: "Qwen 4B", detail: "1,623 ms · relevant, ungated", ms: 1623, level: 1, color: C.cyan, dx: 10, dy: -50, w: 225 },
+      { name: "Gemma 4B", detail: "2,858–3,142 ms · grounded sample", ms: 3000, level: 2, color: C.teal, dx: -248, dy: -45, w: 240 },
+      { name: "Gemini Flash Lite", detail: "1,120 ms · 132/136 checks", ms: 1120, level: 3, color: C.teal, dx: 14, dy: -38, w: 260, highlight: true },
+    ];
+    points.forEach((point) => {
+      const x = xFor(point.ms);
+      const y = yFor(point.level);
+      const size = point.highlight ? 26 : 18;
+      addShape(slide, "ellipse", x - size / 2, y - size / 2, size, size, point.color, C.cream2, point.highlight ? 3 : 1.5);
+      addText(slide, point.name, x + point.dx, y + point.dy, point.w, 20, 15, C.navy, { bold: true });
+      addText(slide, point.detail, x + point.dx, y + point.dy + 20, point.w, 22, 12, C.muted);
+    });
+    addText(slide, "Gemini was the only option that paired ~1.1 s planning with a gated grounded-response eval.", 156, 632, 968, 22, 15, C.navy, { bold: true, align: "center" });
   } else if (spec.kind === "modeltable") {
     const headers = ["MODEL", "TTFT", "OUTCOME"];
     const col = [82, 394, 610, 1200];
