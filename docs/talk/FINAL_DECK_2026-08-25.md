@@ -58,7 +58,7 @@ voice setting.
 
 ---
 
-## Slide 3 — The 80/20 glossary
+## Slide 3 — Demystifying the jargon
 
 **Visible**
 
