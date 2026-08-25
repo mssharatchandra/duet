@@ -53,7 +53,7 @@ const specs = [
   { n: 15, title: "Moshi proved speed—and failed control", kind: "compare", rows: [["", "Handoff p50", "Takeover", "Overlap"], ["Moshi duplex", "240 ms", "0.24", "0.234"], ["Cascade", "1,880 ms", "0.00", "0.053"]], body: "In simple terms: it answered quickly, but often spoke at the wrong time.", source: "Moshi paper · eval/bench/RESULTS.md" },
   { n: 16, title: "Experiment 1: earlier speculation did not prove speed", kind: "nearbars", data: [["Before", 1943], ["Two-word speculation", 1912]], body: ["Start reasoning after two stable words, rather than wait for four.", "The reply should begin meaningfully sooner.", "31 ms difference across two live runs.", "Too small and too few runs: noise, not a proven speedup."], source: "GitHub PR #1 · Widen speculative-reasoning coverage" },
   { n: 17, title: "Experiment 2: the proxy win inverted", kind: "inversion", body: ["4.9× fewer free-run tokens", "+59% takeovers", "+41% overlap", "8× worse handoff"], caption: "In simple terms: we made the bot wait less; it interrupted people more often.", lesson: "EVAL RULE  ·  Eval the behaviour you care about—not the proxy that flatters your optimization.", source: "GitHub PR #2 · docs/DUPLEX_STEERING.md" },
-  { n: 18, title: "Evals are the new PRDs", kind: "loop", body: ["scenario", "metric", "threshold", "regression test"], source: "Duet CI and eval harnesses" },
+  { n: 18, title: "Evals are the new PRDs", kind: "loop", body: ["scenario", "metric", "threshold", "regression test"], caption: "Why: live calls reveal failures a prompt cannot. We made each one a repeatable test.", source: "Duet CI and eval harnesses" },
   { n: 19, title: "The model does not own trust", kind: "guard", body: ["consent", "opt-out", "claims", "staleness", "capabilities"], source: "Duet policy and action adapters" },
   { n: 20, title: "If you cannot replay it, you cannot improve it", kind: "observability", body: ["Langfuse", "Prometheus + Grafana", "Postgres", "JSONL / Loki"], source: "Duet observability stack" },
   { n: 21, title: "Latest Aira run: fast, with one measurement bug", kind: "run", data: [["median response start", "443 ms"], ["interruptions", "3"], ["actions", "2"], ["user turns", "11"]], body: ["p95 invalid — unmatched turn at session cutoff"], source: "Session 1787592808-61dd64 · trace 9722afa5…" },
@@ -404,6 +404,7 @@ function render(spec, slide) {
     line(slide, 1055, 510, 220, 510, C.line, 3);
     line(slide, 220, 510, 220, 400, C.line, 3);
     addText(slide, "real call", 520, 480, 240, 58, 25, C.coral, { fill: C.cream2, radius: 18, bold: true, align: "center" });
+    addText(slide, spec.caption, 170, 590, 940, 34, 17, C.navy, { fill: "#E8F3F6", radius: 16, bold: true, align: "center" });
   } else if (spec.kind === "guard") {
     addShape(slide, "ellipse", 440, 246, 400, 280, C.cream2, C.coral, 6);
     addShape(slide, "ellipse", 535, 315, 210, 140, C.pale, C.cyan, 3);

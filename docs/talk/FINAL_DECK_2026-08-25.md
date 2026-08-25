@@ -380,6 +380,8 @@ Every failure becomes:
 
 `scenario → metric → threshold → regression test`
 
+**Plain-English takeaway**: live calls reveal failures a prompt cannot. We made each one a repeatable test.
+
 **Visual**: Four-step loop ending back at “real call.”
 
 **Speaker notes**: We built deterministic unit tests, 17 grounded-reasoning scenarios, augmented ASR WER, TTS
