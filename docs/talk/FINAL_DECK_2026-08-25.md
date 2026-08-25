@@ -614,7 +614,7 @@ claim.
 
 **One-line summary**: A production voice eval is layered. Measure recognition by accent and noise, turn-taking by endpoint and overlap, reasoning by factuality and task success, speech by TTFB and preference, and the whole system by tail latency, cost and business outcomes.
 
-## A3 — Questions to expect
+## A3 — Closing notes
 
 - **Is this truly full duplex?** Current Aira is controlled duplex: it keeps listening during speech and can
   cancel. Moshi is the native full-duplex research lane.
