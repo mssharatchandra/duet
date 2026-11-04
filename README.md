@@ -4,7 +4,7 @@
 
 [Architecture](docs/ARCHITECTURE.md) · [VPS deployment](docs/VPS_DEPLOYMENT.md) · [Code walkthrough](docs/CODE_WALKTHROUGH.md) · [Two-hour immersion](docs/VOICE_AI_IN_TWO_HOURS.md) · [Current reading](docs/READING_LIST_2026.md) · [Evaluation](eval/README.md) · [Decisions](docs/DECISIONS.md)
 
-**[▶ Watch the Aira demo (2 min 23 sec)](https://raw.githubusercontent.com/mssharatchandra/duet/main/media/duet-demo.mp4)**
+**[▶ Watch the Aira demo (2 min 23 sec)](https://cdn.jsdelivr.net/gh/mssharatchandra/duet@main/media/duet-demo.mp4)**
 
 > Project status, 23 August 2026: the local browser demo works with live Sarvam ASR/TTS and Gemini reasoning. It is a controlled-duplex, interruptible cascade—not a frontier end-to-end speech model and not production-ready. The latest quota-aware synthetic-caller smoke measured 2.169 seconds from final speech end to first server audio and 198 ms from caller-audio start to playback cancellation; recent runs vary materially. Live sessions emit correlated Langfuse traces, Prometheus metrics, Loki logs and Postgres summaries. Human acoustic testing, multilingual evaluation, multi-session isolation and telephony remain open gates.
 
